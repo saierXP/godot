@@ -927,9 +927,9 @@ static void _find_identifiers_in_suite(const GDScriptParser::SuiteNode *p_suite,
 	}
 }
 
-static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth);
+static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth, bool p_only_types = false);
 
-static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class, bool p_only_functions, bool p_static, bool p_parent_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
+static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class, bool p_only_functions, bool p_static, bool p_parent_only, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth, bool p_only_types = false) {
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
 	if (!p_parent_only) {
@@ -952,6 +952,9 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 						if (p_only_functions) {
 							continue;
 						}
+						if (p_only_types && member.constant->initializer->datatype.kind != GDScriptParser::DataType::SCRIPT && member.constant->initializer->datatype.kind != GDScriptParser::DataType::CLASS) {
+							continue;
+						}
 						if (r_result.has(member.constant->identifier->name)) {
 							continue;
 						}
@@ -961,25 +964,25 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 						}
 						break;
 					case GDScriptParser::ClassNode::Member::CLASS:
-						if (p_only_functions) {
+						if (p_only_functions || (p_only_types && outer)) {
 							continue;
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.m_class->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
 						break;
 					case GDScriptParser::ClassNode::Member::ENUM_VALUE:
-						if (p_only_functions) {
+						if (p_only_functions || p_only_types) {
 							continue;
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.enum_value.identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
 						break;
 					case GDScriptParser::ClassNode::Member::ENUM:
-						if (p_only_functions) {
+						if (p_only_functions || (p_only_types && outer) {
 							continue;
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, location);
 						break;
 					case GDScriptParser::ClassNode::Member::FUNCTION:
-						if (outer || (p_static && !member.function->is_static) || member.function->identifier->name.operator String().begins_with("@")) {
+						if (outer || (p_static && !member.function->is_static) || member.function->identifier->name.operator String().begins_with("@") || p_only_types) {
 							continue;
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.function->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, location);
@@ -1013,15 +1016,15 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 	base_type.type = p_class->base_type;
 	base_type.type.is_meta_type = p_static;
 
-	_find_identifiers_in_base(base_type, p_only_functions, r_result, p_recursion_depth + 1);
+	_find_identifiers_in_base(base_type, p_only_functions, r_result, p_recursion_depth + 1, p_only_types);
 }
 
-static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
+static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth, bool p_only_types) {
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
 	GDScriptParser::DataType base_type = p_base.type;
 
-	if (base_type.is_meta_type && base_type.kind != GDScriptParser::DataType::BUILTIN && base_type.kind != GDScriptParser::DataType::ENUM) {
+	if (base_type.is_meta_type && base_type.kind != GDScriptParser::DataType::BUILTIN && base_type.kind != GDScriptParser::DataType::ENUM && !p_only_types) {
 		ScriptLanguage::CodeCompletionOption option("new", ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION, ScriptLanguage::LOCATION_LOCAL);
 		option.insert_text += "(";
 		r_result.insert(option.display, option);
@@ -1030,11 +1033,14 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 	while (!base_type.has_no_type()) {
 		switch (base_type.kind) {
 			case GDScriptParser::DataType::CLASS: {
-				_find_identifiers_in_class(base_type.class_type, p_only_functions, base_type.is_meta_type, false, r_result, p_recursion_depth);
+				_find_identifiers_in_class(base_type.class_type, p_only_functions, base_type.is_meta_type, false, r_result, p_recursion_depth, p_only_types);
 				// This already finds all parent identifiers, so we are done.
 				base_type = GDScriptParser::DataType();
 			} break;
 			case GDScriptParser::DataType::SCRIPT: {
+				if (p_only_types) {
+					return;
+				}
 				Ref<Script> scr = base_type.script_type;
 				if (scr.is_valid()) {
 					if (!p_only_functions) {
@@ -1092,6 +1098,11 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 				}
 			} break;
 			case GDScriptParser::DataType::NATIVE: {
+				if (p_only_types) {
+					// Native classes do not have nested types
+					return;
+				}
+
 				StringName type = base_type.native_type;
 				if (!ClassDB::class_exists(type)) {
 					return;
@@ -1155,6 +1166,11 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 			} break;
 			case GDScriptParser::DataType::ENUM:
 			case GDScriptParser::DataType::BUILTIN: {
+				if (p_only_types) {
+					// Built-in and enums do not have nested types
+					return;
+				}
+
 				Callable::CallError err;
 				Variant tmp;
 				Variant::construct(base_type.builtin_type, tmp, nullptr, 0, err);
@@ -2936,7 +2952,6 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				break;
 			}
 			const GDScriptParser::TypeNode *type = static_cast<const GDScriptParser::TypeNode *>(completion_context.node);
-			bool found = true;
 			GDScriptCompletionIdentifier base;
 			base.type.kind = GDScriptParser::DataType::CLASS;
 			base.type.type_source = GDScriptParser::DataType::INFERRED;
@@ -2944,18 +2959,27 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 			base.type.class_type = completion_context.current_class;
 			base.value = completion_context.base;
 
-			for (int i = 0; i < completion_context.current_argument; i++) {
+			if (completion_context.current_argument < 1) {
+				break;
+			}
+
+			bool found = _guess_identifier_type(completion_context, type->type_chain[0]->name, base);
+
+			for (int i = 1; i < completion_context.current_argument; i++) {
 				GDScriptCompletionIdentifier ci;
-				if (!_guess_identifier_type_from_base(completion_context, base, type->type_chain[i]->name, ci)) {
+				
+				found = _guess_identifier_type_from_base(completion_context, base, type->type_chain[i]->name, ci);
+
+				base = ci;
+
+				if (!found || !base.type.is_meta_type) {
 					found = false;
 					break;
 				}
-				base = ci;
 			}
 
-			// TODO: Improve this to only list types.
 			if (found) {
-				_find_identifiers_in_base(base, false, options, 0);
+				_find_identifiers_in_base(base, false, options, 0, true);
 			}
 			r_forced = true;
 		} break;
