@@ -976,7 +976,7 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 						option = ScriptLanguage::CodeCompletionOption(member.enum_value.identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT, location);
 						break;
 					case GDScriptParser::ClassNode::Member::ENUM:
-						if (p_only_functions || (p_only_types && outer) {
+						if (p_only_functions || (p_only_types && outer)) {
 							continue;
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.m_enum->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_ENUM, location);
