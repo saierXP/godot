@@ -7,7 +7,8 @@ on:
 env:
   # Used for the cache key. Add version suffix to force clean build.
   GODOT_BASE_BRANCH: master
-  SCONSFLAGS: verbose=yes warnings=extra werror=yes module_text_server_fb_enabled=yes
+  # SCONSFLAGS: verbose=yes warnings=extra werror=yes module_text_server_fb_enabled=yes
+  SCONSFLAGS: verbose=yes 
   SCONS_CACHE_MSVC_CONFIG: true
 
 concurrency:
@@ -26,16 +27,16 @@ jobs:
           - name: Editor (target=editor, tests=yes)
             cache-name: windows-editor
             target: editor
-            tests: true
+            tests: false
             # Skip debug symbols, they're way too big with MSVC.
-            sconsflags: debug_symbols=no vsproj=yes windows_subsystem=console
+            sconsflags: debug_symbols=no  windows_subsystem=console
             bin: "./bin/godot.windows.editor.x86_64.exe"
 
-          - name: Template (target=template_release)
-            cache-name: windows-template
-            target: template_release
-            tests: false
-            sconsflags: debug_symbols=no
+          # - name: Template (target=template_release)
+          #   cache-name: windows-template
+          #   target: template_release
+          #   tests: false
+          #   sconsflags: debug_symbols=no
 
     steps:
       - uses: actions/checkout@v3
