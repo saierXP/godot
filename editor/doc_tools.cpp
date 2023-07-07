@@ -38,7 +38,6 @@
 #include "core/io/marshalls.h"
 #include "core/object/script_language.h"
 #include "core/string/translation.h"
-#include "core/version.h"
 #include "editor/editor_settings.h"
 #include "editor/export/editor_export.h"
 #include "scene/resources/theme.h"
@@ -371,11 +370,6 @@ void DocTools::generate(bool p_basic_types) {
 			String name = classes.front()->get();
 			if (!ClassDB::is_class_exposed(name)) {
 				print_verbose(vformat("Class '%s' is not exposed, skipping.", name));
-				classes.pop_front();
-				continue;
-			}
-			if (ClassDB::get_api_type(name) != ClassDB::API_CORE && ClassDB::get_api_type(name) != ClassDB::API_EDITOR) {
-				print_verbose(vformat("Class '%s' belongs neither to core nor editor, skipping.", name));
 				classes.pop_front();
 				continue;
 			}
@@ -1487,7 +1481,6 @@ Error DocTools::save_classes(const String &p_default_path, const HashMap<String,
 				header += " is_experimental=\"true\"";
 			}
 		}
-		header += String(" version=\"") + VERSION_BRANCH + "\"";
 		if (p_include_xml_schema) {
 			// Reference the XML schema so editors can provide error checking.
 			// Modules are nested deep, so change the path to reference the same schema everywhere.
