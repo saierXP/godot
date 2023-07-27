@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gpu_particles_2d_editor_plugin.h                                      */
+/*  openxr_api_extension.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,77 +28,49 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#ifndef GPU_PARTICLES_2D_EDITOR_PLUGIN_H
-#define GPU_PARTICLES_2D_EDITOR_PLUGIN_H
+#ifndef OPENXR_API_EXTENSION_H
+#define OPENXR_API_EXTENSION_H
 
-#include "editor/editor_plugin.h"
-#include "scene/2d/collision_polygon_2d.h"
-#include "scene/2d/gpu_particles_2d.h"
-#include "scene/gui/box_container.h"
-#include "scene/gui/spin_box.h"
+#include "openxr_api.h"
 
-class CheckBox;
-class ConfirmationDialog;
-class EditorFileDialog;
-class MenuButton;
-class OptionButton;
+#include "core/object/ref_counted.h"
+#include "core/os/os.h"
+#include "core/os/thread_safe.h"
+#include "core/variant/native_ptr.h"
 
-class GPUParticles2DEditorPlugin : public EditorPlugin {
-	GDCLASS(GPUParticles2DEditorPlugin, EditorPlugin);
-
-	enum {
-		MENU_GENERATE_VISIBILITY_RECT,
-		MENU_LOAD_EMISSION_MASK,
-		MENU_CLEAR_EMISSION_MASK,
-		MENU_OPTION_CONVERT_TO_CPU_PARTICLES,
-		MENU_RESTART
-	};
-
-	enum EmissionMode {
-		EMISSION_MODE_SOLID,
-		EMISSION_MODE_BORDER,
-		EMISSION_MODE_BORDER_DIRECTED
-	};
-
-	GPUParticles2D *particles = nullptr;
-	List<GPUParticles2D *> selected_particles;
-
-	EditorFileDialog *file = nullptr;
-
-	HBoxContainer *toolbar = nullptr;
-	MenuButton *menu = nullptr;
-
-	SpinBox *epoints = nullptr;
-
-	ConfirmationDialog *generate_visibility_rect = nullptr;
-	SpinBox *generate_seconds = nullptr;
-
-	ConfirmationDialog *emission_mask = nullptr;
-	OptionButton *emission_mask_mode = nullptr;
-	CheckBox *emission_mask_centered = nullptr;
-	CheckBox *emission_colors = nullptr;
-
-	String source_emission_file;
-
-	void _file_selected(const String &p_file);
-	void _menu_callback(int p_idx);
-	void _generate_visibility_rect();
-	void _generate_emission_mask();
-	void _selection_changed();
+class OpenXRAPIExtension : public RefCounted {
+	GDCLASS(OpenXRAPIExtension, RefCounted);
 
 protected:
-	void _notification(int p_what);
+	_THREAD_SAFE_CLASS_
+
 	static void _bind_methods();
 
 public:
-	virtual String get_name() const override { return "GPUParticles2D"; }
-	bool has_main_screen() const override { return false; }
-	virtual void edit(Object *p_object) override;
-	virtual bool handles(Object *p_object) const override;
-	virtual void make_visible(bool p_visible) override;
+	uint64_t get_instance();
+	uint64_t get_system_id();
+	uint64_t get_session();
 
-	GPUParticles2DEditorPlugin();
-	~GPUParticles2DEditorPlugin();
+	// Helper method to convert an XrPosef to a Transform3D.
+	Transform3D transform_from_pose(GDExtensionConstPtr<const void> p_pose);
+
+	bool xr_result(uint64_t result, String format, Array args = Array());
+
+	static bool openxr_is_enabled(bool p_check_run_in_editor = true);
+
+	//TODO workaround as GDExtensionPtr<void> return type results in build error in godot-cpp
+	uint64_t get_instance_proc_addr(String p_name);
+	String get_error_string(uint64_t result);
+	String get_swapchain_format_name(int64_t p_swapchain_format);
+
+	bool is_initialized();
+	bool is_running();
+
+	uint64_t get_play_space();
+	int64_t get_next_frame_time();
+	bool can_render();
+
+	OpenXRAPIExtension();
 };
 
-#endif // GPU_PARTICLES_2D_EDITOR_PLUGIN_H
+#endif // OPENXR_API_EXTENSION_H

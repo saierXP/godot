@@ -37,6 +37,7 @@
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/plugins/tiles/tile_set_editor.h"
 #include "editor/progress_dialog.h"
 
 #include "scene/gui/box_container.h"
@@ -966,6 +967,8 @@ void TileSetAtlasSourceEditor::_update_atlas_view() {
 
 	if (tile_set.is_null()) {
 		return;
+	} else {
+		tile_create_help->set_visible(tools_button_group->get_pressed_button() == tool_setup_atlas_source_button);
 	}
 
 	Vector2i pos;
@@ -2418,6 +2421,7 @@ TileSetAtlasSourceEditor::TileSetAtlasSourceEditor() {
 	set_shortcut_context(this);
 	set_process_shortcut_input(true);
 	set_process_internal(true);
+	TileSetEditor::get_singleton()->register_split(this);
 
 	// Middle panel.
 	VBoxContainer *middle_vbox_container = memnew(VBoxContainer);
@@ -2579,6 +2583,18 @@ TileSetAtlasSourceEditor::TileSetAtlasSourceEditor() {
 	tile_atlas_view->connect("transform_changed", callable_mp(TilesEditorPlugin::get_singleton(), &TilesEditorPlugin::set_atlas_view_transform));
 	tile_atlas_view->connect("transform_changed", callable_mp(this, &TileSetAtlasSourceEditor::_tile_atlas_view_transform_changed).unbind(2));
 	right_panel->add_child(tile_atlas_view);
+
+	tile_create_help = memnew(HBoxContainer);
+	tile_atlas_view->add_child(tile_create_help);
+	tile_create_help->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	tile_create_help->set_anchors_and_offsets_preset(Control::PRESET_BOTTOM_LEFT, Control::PRESET_MODE_MINSIZE, 30 * EDSCALE);
+	tile_create_help->add_theme_constant_override("separation", 30 * EDSCALE);
+
+	Label *help_label = memnew(Label(TTR("Hold Ctrl to create multiple tiles.")));
+	tile_create_help->add_child(help_label);
+
+	help_label = memnew(Label(TTR("Hold Shift to create big tiles.")));
+	tile_create_help->add_child(help_label);
 
 	base_tile_popup_menu = memnew(PopupMenu);
 	base_tile_popup_menu->add_shortcut(ED_SHORTCUT("tiles_editor/delete", TTR("Delete"), Key::KEY_DELETE), TILE_DELETE);
