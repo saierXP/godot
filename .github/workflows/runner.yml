@@ -34,7 +34,6 @@ jobs:
 
   windows-build:
     name: 🏁 Windows
-    needs: static-checks
     uses: ./.github/workflows/windows_builds.yml
 
   # web-build:
