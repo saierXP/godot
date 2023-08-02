@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  android_support.h                                                     */
+/*  image_loader_dds.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,27 +28,16 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#ifndef ANDROID_SUPPORT_H
-#define ANDROID_SUPPORT_H
+#ifndef IMAGE_LOADER_DDS_H
+#define IMAGE_LOADER_DDS_H
 
-#if defined(ANDROID_ENABLED)
+#include "core/io/image_loader.h"
 
-#include "core/string/ustring.h"
+class ImageLoaderDDS : public ImageFormatLoader {
+public:
+	virtual Error load_image(Ref<Image> p_image, Ref<FileAccess> f, BitField<ImageFormatLoader::LoaderFlags> p_flags, float p_scale);
+	virtual void get_recognized_extensions(List<String> *p_extensions) const;
+	ImageLoaderDDS();
+};
 
-namespace gdmono {
-namespace android {
-namespace support {
-
-String get_app_native_lib_dir();
-
-void initialize();
-void cleanup();
-
-void register_internal_calls();
-} // namespace support
-} // namespace android
-} // namespace gdmono
-
-#endif // ANDROID_ENABLED
-
-#endif // ANDROID_SUPPORT_H
+#endif // IMAGE_LOADER_DDS_H

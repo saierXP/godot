@@ -394,13 +394,13 @@ public:
 
 	enum BarrierMask {
 		BARRIER_MASK_VERTEX = 1,
-		BARRIER_MASK_FRAGMENT = 2,
-		BARRIER_MASK_COMPUTE = 4,
-		BARRIER_MASK_TRANSFER = 8,
+		BARRIER_MASK_FRAGMENT = 8,
+		BARRIER_MASK_COMPUTE = 2,
+		BARRIER_MASK_TRANSFER = 4,
 
-		BARRIER_MASK_RASTER = BARRIER_MASK_VERTEX | BARRIER_MASK_FRAGMENT, // 3,
-		BARRIER_MASK_ALL_BARRIERS = BARRIER_MASK_RASTER | BARRIER_MASK_COMPUTE | BARRIER_MASK_TRANSFER, // 7
-		BARRIER_MASK_NO_BARRIER = 16,
+		BARRIER_MASK_RASTER = BARRIER_MASK_VERTEX | BARRIER_MASK_FRAGMENT, // 9,
+		BARRIER_MASK_ALL_BARRIERS = 0x7FFF, // all flags set
+		BARRIER_MASK_NO_BARRIER = 0x8000,
 	};
 
 	/*****************/
@@ -734,7 +734,8 @@ public:
 	virtual Vector<uint8_t> shader_compile_binary_from_spirv(const Vector<ShaderStageSPIRVData> &p_spirv, const String &p_shader_name = "") = 0;
 
 	virtual RID shader_create_from_spirv(const Vector<ShaderStageSPIRVData> &p_spirv, const String &p_shader_name = "");
-	virtual RID shader_create_from_bytecode(const Vector<uint8_t> &p_shader_binary) = 0;
+	virtual RID shader_create_from_bytecode(const Vector<uint8_t> &p_shader_binary, RID p_placeholder = RID()) = 0;
+	virtual RID shader_create_placeholder() = 0;
 
 	virtual uint32_t shader_get_vertex_input_attribute_mask(RID p_shader) = 0;
 

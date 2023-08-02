@@ -773,18 +773,7 @@ void TileMapLayer::_scenes_update_dirty_quadrants(SelfList<TileMapQuadrant>::Lis
 	SelfList<TileMapQuadrant> *q_list_element = r_dirty_quadrant_list.first();
 	while (q_list_element) {
 		TileMapQuadrant &q = *q_list_element->self();
-
-		// Clear the scenes if instance cache was cleared.
-		if (instantiated_scenes.is_empty()) {
-			for (const KeyValue<Vector2i, String> &E : q.scenes) {
-				Node *node = tile_map_node->get_node_or_null(E.value);
-				if (node) {
-					node->queue_free();
-				}
-			}
-		}
-
-		q.scenes.clear();
+		_scenes_cleanup_quadrant(&q);
 
 		// Recreate the scenes.
 		for (const Vector2i &E_cell : q.cells) {
@@ -1562,6 +1551,7 @@ void TileMapLayer::clear_instantiated_scenes() {
 
 void TileMapLayer::clear_internals() {
 	// Clear quadrants.
+	clear_instantiated_scenes();
 	while (quadrant_map.size()) {
 		_erase_quadrant(quadrant_map.begin());
 	}
@@ -1962,6 +1952,7 @@ TileData *TileMapLayer::get_cell_tile_data(const Vector2i &p_coords, bool p_use_
 
 void TileMapLayer::clear() {
 	// Remove all tiles.
+	clear_instantiated_scenes();
 	clear_internals();
 	tile_map.clear();
 	recreate_internals();
@@ -3285,7 +3276,7 @@ Vector2i TileMap::get_coords_for_body_rid(RID p_physics_body) {
 			return layer->get_coords_for_body_rid(p_physics_body);
 		}
 	}
-	ERR_FAIL_V_MSG(Vector2i(), vformat("No tiles for the given body RID %d.", p_physics_body));
+	ERR_FAIL_V_MSG(Vector2i(), vformat("No tiles for the given body RID %d.", p_physics_body.get_id()));
 }
 
 int TileMap::get_layer_for_body_rid(RID p_physics_body) {
@@ -3294,7 +3285,7 @@ int TileMap::get_layer_for_body_rid(RID p_physics_body) {
 			return i;
 		}
 	}
-	ERR_FAIL_V_MSG(-1, vformat("No tiles for the given body RID %d.", p_physics_body));
+	ERR_FAIL_V_MSG(-1, vformat("No tiles for the given body RID %d.", p_physics_body.get_id()));
 }
 
 void TileMap::fix_invalid_tiles() {

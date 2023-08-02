@@ -781,24 +781,20 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 				clear_color.r *= bg_energy_multiplier;
 				clear_color.g *= bg_energy_multiplier;
 				clear_color.b *= bg_energy_multiplier;
-				/*
-				if (p_render_data->render_buffers->has_custom_data(RB_SCOPE_FOG) || environment_get_fog_enabled(p_render_data->environment)) {
+				if (environment_get_fog_enabled(p_render_data->environment)) {
 					draw_sky_fog_only = true;
 					RendererRD::MaterialStorage::get_singleton()->material_set_param(sky.sky_scene_state.fog_material, "clear_color", Variant(clear_color.srgb_to_linear()));
 				}
-				*/
 			} break;
 			case RS::ENV_BG_COLOR: {
 				clear_color = environment_get_bg_color(p_render_data->environment);
 				clear_color.r *= bg_energy_multiplier;
 				clear_color.g *= bg_energy_multiplier;
 				clear_color.b *= bg_energy_multiplier;
-				/*
-				if (p_render_data->render_buffers->has_custom_data(RB_SCOPE_FOG) || environment_get_fog_enabled(p_render_data->environment)) {
+				if (environment_get_fog_enabled(p_render_data->environment)) {
 					draw_sky_fog_only = true;
 					RendererRD::MaterialStorage::get_singleton()->material_set_param(sky.sky_scene_state.fog_material, "clear_color", Variant(clear_color.srgb_to_linear()));
 				}
-				*/
 			} break;
 			case RS::ENV_BG_SKY: {
 				draw_sky = true;
@@ -908,13 +904,19 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 		{
 			// regular forward for now
 			Vector<Color> c;
-			c.push_back(clear_color.srgb_to_linear()); // our render buffer
-			if (rb_data.is_valid()) {
-				if (p_render_data->render_buffers->get_msaa_3d() != RS::VIEWPORT_MSAA_DISABLED) {
-					c.push_back(clear_color.srgb_to_linear()); // our resolve buffer
+			{
+				Color cc = clear_color.srgb_to_linear();
+				if (rb_data.is_valid()) {
+					cc.a = 0; // For transparent viewport backgrounds.
 				}
-				if (using_subpass_post_process) {
-					c.push_back(Color()); // our 2D buffer we're copying into
+				c.push_back(cc); // Our render buffer.
+				if (rb_data.is_valid()) {
+					if (p_render_data->render_buffers->get_msaa_3d() != RS::VIEWPORT_MSAA_DISABLED) {
+						c.push_back(clear_color.srgb_to_linear()); // Our resolve buffer.
+					}
+					if (using_subpass_post_process) {
+						c.push_back(Color()); // Our 2D buffer we're copying into.
+					}
 				}
 			}
 

@@ -6,6 +6,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # First stage: Only static checks, fast and prevent expensive builds from running.
+
   static-checks:
     name: 📊 Static checks
     uses: ./.github/workflows/static_checks.yml
