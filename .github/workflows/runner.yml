@@ -33,6 +33,7 @@ jobs:
   #   uses: ./.github/workflows/macos_builds.yml
 
   windows-build:
+    if: ${{ vars.DISABLE_GODOT_CI == '' }}
     name: 🏁 Windows
     uses: ./.github/workflows/windows_builds.yml
 
