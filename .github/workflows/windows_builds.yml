@@ -70,7 +70,9 @@ jobs:
 
       - name: Prepare artifact
         run: |
-          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          if (!"${{ matrix.Name }}".Contains('symbol')) {
+              Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          }
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
