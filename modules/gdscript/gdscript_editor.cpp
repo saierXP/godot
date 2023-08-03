@@ -3010,7 +3010,7 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				break;
 			}
 
-			bool found = _guess_identifier_type(completion_context, type->type_chain[0]->name, base);
+			bool found = _guess_identifier_type(completion_context, type->type_chain[0], base);
 
 			for (int i = 1; i < completion_context.current_argument; i++) {
 				GDScriptCompletionIdentifier ci;
