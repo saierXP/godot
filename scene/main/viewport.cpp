@@ -1085,7 +1085,7 @@ void Viewport::enable_canvas_transform_override(bool p_enable) {
 	}
 }
 
-bool Viewport::is_canvas_transform_override_enbled() const {
+bool Viewport::is_canvas_transform_override_enabled() const {
 	ERR_READ_THREAD_GUARD_V(false);
 	return override_canvas_transform;
 }
@@ -1175,6 +1175,17 @@ void Viewport::set_transparent_background(bool p_enable) {
 bool Viewport::has_transparent_background() const {
 	ERR_READ_THREAD_GUARD_V(false);
 	return transparent_bg;
+}
+
+void Viewport::set_use_hdr_2d(bool p_enable) {
+	ERR_MAIN_THREAD_GUARD;
+	use_hdr_2d = p_enable;
+	RS::get_singleton()->viewport_set_use_hdr_2d(viewport, p_enable);
+}
+
+bool Viewport::is_using_hdr_2d() const {
+	ERR_READ_THREAD_GUARD_V(false);
+	return use_hdr_2d;
 }
 
 void Viewport::set_world_2d(const Ref<World2D> &p_world_2d) {
@@ -2182,6 +2193,18 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 			_perform_drop();
 			set_input_as_handled();
 			return;
+		}
+
+		if (p_event->is_action_pressed("ui_cancel")) {
+			// Cancel tooltip timer or hide tooltip when pressing Escape (this is standard behavior in most applications).
+			_gui_cancel_tooltip();
+			if (gui.tooltip_popup) {
+				// If a tooltip was hidden, prevent other actions associated with `ui_cancel` from occurring.
+				// For instance, this prevents the node from being deselected when pressing Escape
+				// to hide a documentation tooltip in the inspector.
+				set_input_as_handled();
+				return;
+			}
 		}
 
 		if (gui.key_focus && !gui.key_focus->is_visible_in_tree()) {
@@ -4271,6 +4294,8 @@ void Viewport::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_visible_rect"), &Viewport::get_visible_rect);
 	ClassDB::bind_method(D_METHOD("set_transparent_background", "enable"), &Viewport::set_transparent_background);
 	ClassDB::bind_method(D_METHOD("has_transparent_background"), &Viewport::has_transparent_background);
+	ClassDB::bind_method(D_METHOD("set_use_hdr_2d", "enable"), &Viewport::set_use_hdr_2d);
+	ClassDB::bind_method(D_METHOD("is_using_hdr_2d"), &Viewport::is_using_hdr_2d);
 
 	ClassDB::bind_method(D_METHOD("set_msaa_2d", "msaa"), &Viewport::set_msaa_2d);
 	ClassDB::bind_method(D_METHOD("get_msaa_2d"), &Viewport::get_msaa_2d);
@@ -4435,6 +4460,8 @@ void Viewport::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_occlusion_culling"), "set_use_occlusion_culling", "is_using_occlusion_culling");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "mesh_lod_threshold", PROPERTY_HINT_RANGE, "0,1024,0.1"), "set_mesh_lod_threshold", "get_mesh_lod_threshold");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "debug_draw", PROPERTY_HINT_ENUM, "Disabled,Unshaded,Lighting,Overdraw,Wireframe"), "set_debug_draw", "get_debug_draw");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_hdr_2d"), "set_use_hdr_2d", "is_using_hdr_2d");
+
 #ifndef _3D_DISABLED
 	ADD_GROUP("Scaling 3D", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "scaling_3d_mode", PROPERTY_HINT_ENUM, "Bilinear (Fastest),FSR 1.0 (Fast)"), "set_scaling_3d_mode", "get_scaling_3d_mode");

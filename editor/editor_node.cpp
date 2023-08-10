@@ -496,6 +496,9 @@ void EditorNode::_update_from_settings() {
 	Viewport::MSAA msaa = Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d")));
 	scene_root->set_msaa_2d(msaa);
 
+	bool use_hdr_2d = GLOBAL_GET("rendering/viewport/hdr_2d");
+	scene_root->set_use_hdr_2d(use_hdr_2d);
+
 	float mesh_lod_threshold = GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels");
 	scene_root->set_mesh_lod_threshold(mesh_lod_threshold);
 
@@ -5006,10 +5009,15 @@ void EditorNode::_load_editor_layout() {
 	config.instantiate();
 	Error err = config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 	if (err != OK) { // No config.
-		// If config is not found, expand the res:// folder by default.
+		// If config is not found, expand the res:// folder and favorites by default.
 		TreeItem *root = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("res://", 0);
 		if (root) {
 			root->set_collapsed(false);
+		}
+
+		TreeItem *favorites = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("Favorites", 0);
+		if (favorites) {
+			favorites->set_collapsed(false);
 		}
 
 		if (overridden_default_layout >= 0) {
@@ -6920,8 +6928,7 @@ EditorNode::EditorNode() {
 
 	{
 		// Register importers at the beginning, so dialogs are created with the right extensions.
-		Ref<ResourceImporterTexture> import_texture;
-		import_texture.instantiate();
+		Ref<ResourceImporterTexture> import_texture = memnew(ResourceImporterTexture(true));
 		ResourceFormatImporter::get_singleton()->add_importer(import_texture);
 
 		Ref<ResourceImporterLayeredTexture> import_cubemap;
@@ -6939,8 +6946,7 @@ EditorNode::EditorNode() {
 		import_cubemap_array->set_mode(ResourceImporterLayeredTexture::MODE_CUBEMAP_ARRAY);
 		ResourceFormatImporter::get_singleton()->add_importer(import_cubemap_array);
 
-		Ref<ResourceImporterLayeredTexture> import_3d;
-		import_3d.instantiate();
+		Ref<ResourceImporterLayeredTexture> import_3d = memnew(ResourceImporterLayeredTexture(true));
 		import_3d->set_mode(ResourceImporterLayeredTexture::MODE_3D);
 		ResourceFormatImporter::get_singleton()->add_importer(import_3d);
 
@@ -6980,12 +6986,10 @@ EditorNode::EditorNode() {
 		import_shader_file.instantiate();
 		ResourceFormatImporter::get_singleton()->add_importer(import_shader_file);
 
-		Ref<ResourceImporterScene> import_scene;
-		import_scene.instantiate();
+		Ref<ResourceImporterScene> import_scene = memnew(ResourceImporterScene(false, true));
 		ResourceFormatImporter::get_singleton()->add_importer(import_scene);
 
-		Ref<ResourceImporterScene> import_animation;
-		import_animation = Ref<ResourceImporterScene>(memnew(ResourceImporterScene(true)));
+		Ref<ResourceImporterScene> import_animation = memnew(ResourceImporterScene(true, true));
 		ResourceFormatImporter::get_singleton()->add_importer(import_animation);
 
 		{
@@ -7848,7 +7852,6 @@ EditorNode::EditorNode() {
 
 	log = memnew(EditorLog);
 	Button *output_button = add_bottom_panel_item(TTR("Output"), log);
-	output_button->set_theme_type_variation("BottomPanelButton");
 	log->set_tool_button(output_button);
 
 	center_split->connect("resized", callable_mp(this, &EditorNode::_vp_resized));
@@ -8000,8 +8003,8 @@ EditorNode::EditorNode() {
 	vcs_actions_menu = VersionControlEditorPlugin::get_singleton()->get_version_control_actions_panel();
 	vcs_actions_menu->set_name("Version Control");
 	vcs_actions_menu->connect("index_pressed", callable_mp(this, &EditorNode::_version_control_menu_option));
-	vcs_actions_menu->add_item(TTR("Create Version Control Metadata"), RUN_VCS_METADATA);
-	vcs_actions_menu->add_item(TTR("Version Control Settings"), RUN_VCS_SETTINGS);
+	vcs_actions_menu->add_item(TTR("Create Version Control Metadata..."), RUN_VCS_METADATA);
+	vcs_actions_menu->add_item(TTR("Version Control Settings..."), RUN_VCS_SETTINGS);
 	project_menu->add_child(vcs_actions_menu);
 	project_menu->set_item_submenu(project_menu->get_item_index(VCS_MENU), "Version Control");
 

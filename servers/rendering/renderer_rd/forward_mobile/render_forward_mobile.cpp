@@ -722,16 +722,9 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 			using_subpass_post_process = false;
 		}
 
-		// We do this last because our get_color_fbs creates and caches the framebuffer if we need it.
-		RID four_subpasses = rb_data->get_color_fbs(RenderBufferDataForwardMobile::FB_CONFIG_FOUR_SUBPASSES);
-		if (using_subpass_post_process && four_subpasses.is_null()) {
-			// can't do blit subpass because we don't have all subpasses
-			using_subpass_post_process = false;
-		}
-
 		if (using_subpass_post_process) {
 			// all as subpasses
-			framebuffer = four_subpasses;
+			framebuffer = rb_data->get_color_fbs(RenderBufferDataForwardMobile::FB_CONFIG_FOUR_SUBPASSES);
 		} else if (using_subpass_transparent) {
 			// our tonemap pass is separate
 			framebuffer = rb_data->get_color_fbs(RenderBufferDataForwardMobile::FB_CONFIG_THREE_SUBPASSES);
@@ -803,7 +796,8 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 				if (rb_data.is_valid()) {
 					RID dest_framebuffer = rb_data->get_color_fbs(RenderBufferDataForwardMobile::FB_CONFIG_ONE_PASS);
 					RID texture = RendererRD::TextureStorage::get_singleton()->render_target_get_rd_texture(rb->get_render_target());
-					copy_effects->copy_to_fb_rect(texture, dest_framebuffer, Rect2i(), false, false, false, false, RID(), false, false, true);
+					bool convert_to_linear = !RendererRD::TextureStorage::get_singleton()->render_target_is_using_hdr(rb->get_render_target());
+					copy_effects->copy_to_fb_rect(texture, dest_framebuffer, Rect2i(), false, false, false, false, RID(), false, false, convert_to_linear);
 				}
 				keep_color = true;
 			} break;

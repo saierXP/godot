@@ -176,12 +176,6 @@ void EditorColorMap::create() {
 	add_conversion_exception("Sky");
 	add_conversion_exception("EditorControlAnchor");
 	add_conversion_exception("DefaultProjectIcon");
-	add_conversion_exception("GuiChecked");
-	add_conversion_exception("GuiRadioChecked");
-	add_conversion_exception("GuiIndeterminate");
-	add_conversion_exception("GuiCloseCustomizable");
-	add_conversion_exception("GuiGraphNodePort");
-	add_conversion_exception("GuiResizer");
 	add_conversion_exception("ZoomMore");
 	add_conversion_exception("ZoomLess");
 	add_conversion_exception("ZoomReset");
@@ -191,6 +185,18 @@ void EditorColorMap::create() {
 	add_conversion_exception("StatusSuccess");
 	add_conversion_exception("StatusWarning");
 	add_conversion_exception("OverbrightIndicator");
+	add_conversion_exception("MaterialPreviewCube");
+	add_conversion_exception("MaterialPreviewSphere");
+	add_conversion_exception("MaterialPreviewLight1");
+	add_conversion_exception("MaterialPreviewLight2");
+
+	// GUI
+	add_conversion_exception("GuiChecked");
+	add_conversion_exception("GuiRadioChecked");
+	add_conversion_exception("GuiIndeterminate");
+	add_conversion_exception("GuiCloseCustomizable");
+	add_conversion_exception("GuiGraphNodePort");
+	add_conversion_exception("GuiResizer");
 	add_conversion_exception("GuiMiniCheckerboard");
 
 	/// Code Editor.
@@ -908,7 +914,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_color("icon_pressed_color", "Button", icon_pressed_color);
 	theme->set_color("icon_disabled_color", "Button", icon_disabled_color);
 
-	theme->set_constant("h_separation", "Button", 2 * EDSCALE);
+	theme->set_constant("h_separation", "Button", 4 * EDSCALE);
 	theme->set_constant("outline_size", "Button", 0);
 
 	const float ACTION_BUTTON_EXTRA_MARGIN = 32 * EDSCALE;
@@ -943,6 +949,25 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	editor_log_button_pressed->set_border_width(SIDE_BOTTOM, 2 * EDSCALE);
 	editor_log_button_pressed->set_border_color(accent_color);
 	theme->set_stylebox("pressed", "EditorLogFilterButton", editor_log_button_pressed);
+
+	// Buttons in material previews
+	const Color dim_light_color = icon_normal_color.darkened(0.24);
+	const Color dim_light_highlighted_color = icon_normal_color.darkened(0.18);
+	Ref<StyleBox> sb_empty_borderless = make_empty_stylebox();
+
+	theme->set_type_variation("PreviewLightButton", "Button");
+	// When pressed, don't use the accent color tint. When unpressed, dim the icon.
+	theme->set_color("icon_normal_color", "PreviewLightButton", dim_light_color);
+	theme->set_color("icon_focus_color", "PreviewLightButton", dim_light_color);
+	theme->set_color("icon_pressed_color", "PreviewLightButton", icon_normal_color);
+	theme->set_color("icon_hover_pressed_color", "PreviewLightButton", icon_normal_color);
+	// Unpressed icon is dim, so use a dim highlight.
+	theme->set_color("icon_hover_color", "PreviewLightButton", dim_light_highlighted_color);
+
+	theme->set_stylebox("normal", "PreviewLightButton", sb_empty_borderless);
+	theme->set_stylebox("hover", "PreviewLightButton", sb_empty_borderless);
+	theme->set_stylebox("focus", "PreviewLightButton", sb_empty_borderless);
+	theme->set_stylebox("pressed", "PreviewLightButton", sb_empty_borderless);
 
 	// ProjectTag
 	{
@@ -1255,6 +1280,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	}
 
 	theme->set_stylebox("panel", "Tree", style_tree_bg);
+	theme->set_stylebox("panel", "EditorValidationPanel", style_tree_bg);
 
 	// Tree
 	theme->set_icon("checked", "Tree", theme->get_icon(SNAME("GuiChecked"), SNAME("EditorIcons")));
@@ -1453,9 +1479,6 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_stylebox("panel", "TabContainer", style_content_panel);
 
 	// Bottom panel.
-	theme->set_type_variation("BottomPanelButton", "Button");
-	// Add separation for the warning/error icon.
-	theme->set_constant("h_separation", "BottomPanelButton", 6 * EDSCALE);
 	Ref<StyleBoxFlat> style_bottom_panel = style_content_panel->duplicate();
 	style_bottom_panel->set_corner_radius_all(corner_radius * EDSCALE);
 	theme->set_stylebox("BottomPanel", "EditorStyles", style_bottom_panel);
@@ -1944,7 +1967,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_color("files_disabled", "FileDialog", font_disabled_color);
 
 	// ColorPicker
-	theme->set_constant("margin", "ColorPicker", popup_margin_size);
+	theme->set_constant("margin", "ColorPicker", default_margin_size);
 	theme->set_constant("sv_width", "ColorPicker", 256 * EDSCALE);
 	theme->set_constant("sv_height", "ColorPicker", 256 * EDSCALE);
 	theme->set_constant("h_width", "ColorPicker", 30 * EDSCALE);

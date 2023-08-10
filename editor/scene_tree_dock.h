@@ -60,6 +60,7 @@ class SceneTreeDock : public VBoxContainer {
 		TOOL_CUT,
 		TOOL_COPY,
 		TOOL_PASTE,
+		TOOL_PASTE_AS_SIBLING,
 		TOOL_RENAME,
 #ifdef MODULE_REGEX_ENABLED
 		TOOL_BATCH_RENAME,
@@ -281,6 +282,8 @@ class SceneTreeDock : public VBoxContainer {
 
 	bool _update_node_path(Node *p_root_node, NodePath &r_node_path, HashMap<Node *, NodePath> *p_renames) const;
 	bool _check_node_path_recursive(Node *p_root_node, Variant &r_variant, HashMap<Node *, NodePath> *p_renames) const;
+	bool _check_node_recursive(Variant &r_variant, Node *p_node, Node *p_by_node, const String type_hint, String &r_warn_message);
+	void _replace_node(Node *p_node, Node *p_by_node, bool p_keep_properties = true, bool p_remove_old = true);
 
 private:
 	static SceneTreeDock *singleton;
@@ -306,6 +309,7 @@ public:
 	void set_selected(Node *p_node, bool p_emit_selected = false);
 	void fill_path_renames(Node *p_node, Node *p_new_parent, HashMap<Node *, NodePath> *p_renames);
 	void perform_node_renames(Node *p_base, HashMap<Node *, NodePath> *p_renames, HashMap<Ref<Animation>, HashSet<int>> *r_rem_anims = nullptr);
+	void perform_node_replace(Node *p_base, Node *p_node, Node *p_by_node);
 	SceneTreeEditor *get_tree_editor() { return scene_tree; }
 	EditorData *get_editor_data() { return editor_data; }
 
@@ -315,7 +319,7 @@ public:
 	void show_tab_buttons();
 	void hide_tab_buttons();
 
-	void replace_node(Node *p_node, Node *p_by_node, bool p_keep_properties = true, bool p_remove_old = true);
+	void replace_node(Node *p_node, Node *p_by_node);
 
 	void attach_script_to_selected(bool p_extend);
 	void open_script_dialog(Node *p_for_node, bool p_extend);
@@ -326,7 +330,7 @@ public:
 	void open_add_child_dialog();
 	void open_instance_child_dialog();
 
-	List<Node *> paste_nodes();
+	List<Node *> paste_nodes(bool p_paste_as_sibling = false);
 	List<Node *> get_node_clipboard() const;
 
 	ScriptCreateDialog *get_script_create_dialog() {

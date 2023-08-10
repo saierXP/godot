@@ -670,9 +670,14 @@ void Window::_propagate_window_notification(Node *p_node, int p_notification) {
 void Window::_event_callback(DisplayServer::WindowEvent p_event) {
 	switch (p_event) {
 		case DisplayServer::WINDOW_EVENT_MOUSE_ENTER: {
-			_propagate_window_notification(this, NOTIFICATION_WM_MOUSE_ENTER);
 			Window *root = get_tree()->get_root();
-			DEV_ASSERT(!root->gui.windowmanager_window_over); // Entering a window while a window is hovered should never happen.
+			if (root->gui.windowmanager_window_over) {
+#ifdef DEV_ENABLED
+				WARN_PRINT_ONCE("Entering a window while a window is hovered should never happen in DisplayServer.");
+#endif // DEV_ENABLED
+				root->gui.windowmanager_window_over->_event_callback(DisplayServer::WINDOW_EVENT_MOUSE_EXIT);
+			}
+			_propagate_window_notification(this, NOTIFICATION_WM_MOUSE_ENTER);
 			root->gui.windowmanager_window_over = this;
 			notification(NOTIFICATION_VP_MOUSE_ENTER);
 			if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_CURSOR_SHAPE)) {
@@ -681,7 +686,12 @@ void Window::_event_callback(DisplayServer::WindowEvent p_event) {
 		} break;
 		case DisplayServer::WINDOW_EVENT_MOUSE_EXIT: {
 			Window *root = get_tree()->get_root();
-			DEV_ASSERT(root->gui.windowmanager_window_over); // Exiting a window, while no window is hovered should never happen.
+			if (!root->gui.windowmanager_window_over) {
+#ifdef DEV_ENABLED
+				WARN_PRINT_ONCE("Exiting a window while no window is hovered should never happen in DisplayServer.");
+#endif // DEV_ENABLED
+				return;
+			}
 			root->gui.windowmanager_window_over->_mouse_leave_viewport();
 			root->gui.windowmanager_window_over = nullptr;
 			_propagate_window_notification(this, NOTIFICATION_WM_MOUSE_EXIT);
@@ -1748,6 +1758,10 @@ Rect2i Window::fit_rect_in_parent(Rect2i p_rect, const Rect2i &p_parent_rect) co
 
 Size2 Window::get_contents_minimum_size() const {
 	ERR_READ_THREAD_GUARD_V(Size2());
+	Vector2 ms;
+	if (GDVIRTUAL_CALL(_get_contents_minimum_size, ms)) {
+		return ms;
+	}
 	return _get_contents_minimum_size();
 }
 
@@ -2760,6 +2774,8 @@ void Window::_bind_methods() {
 	BIND_ENUM_CONSTANT(WINDOW_INITIAL_POSITION_CENTER_OTHER_SCREEN);
 	BIND_ENUM_CONSTANT(WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_MOUSE_FOCUS);
 	BIND_ENUM_CONSTANT(WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_KEYBOARD_FOCUS);
+
+	GDVIRTUAL_BIND(_get_contents_minimum_size);
 }
 
 Window::Window() {
