@@ -289,7 +289,7 @@ private:
 	bool on_state_loss_pending();
 	bool on_state_exiting();
 
-	// convencience
+	// convenience
 	void copy_string_to_char_buffer(const String p_string, char *p_buffer, int p_buffer_len);
 
 public:
@@ -380,7 +380,7 @@ public:
 
 	RID action_set_create(const String p_name, const String p_localized_name, const int p_priority);
 	String action_set_get_name(RID p_action_set);
-	bool action_set_attach(RID p_action_set);
+	bool attach_action_sets(const Vector<RID> &p_action_sets);
 	void action_set_free(RID p_action_set);
 
 	RID action_create(RID p_action_set, const String p_name, const String p_localized_name, OpenXRAction::ActionType p_action_type, const Vector<RID> &p_trackers);
@@ -405,7 +405,9 @@ public:
 	void unregister_composition_layer_provider(OpenXRCompositionLayerProvider *provider);
 
 	const XrEnvironmentBlendMode *get_supported_environment_blend_modes(uint32_t &count);
-	bool set_environment_blend_mode(XrEnvironmentBlendMode mode);
+	bool is_environment_blend_mode_supported(XrEnvironmentBlendMode p_blend_mode) const;
+	bool set_environment_blend_mode(XrEnvironmentBlendMode p_blend_mode);
+	XrEnvironmentBlendMode get_environment_blend_mode() const { return environment_blend_mode; }
 
 	OpenXRAPI();
 	~OpenXRAPI();

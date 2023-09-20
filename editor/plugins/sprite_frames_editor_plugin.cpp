@@ -37,6 +37,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
+#include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/scene_tree_dock.h"
@@ -132,12 +133,12 @@ void SpriteFramesEditor::_sheet_preview_draw() {
 		return;
 	}
 
-	Color accent = get_theme_color("accent_color", "Editor");
+	Color accent = get_theme_color("accent_color", EditorStringName(Editor));
 
 	_sheet_sort_frames();
 
-	Ref<Font> font = get_theme_font(SNAME("bold"), SNAME("EditorFonts"));
-	int font_size = get_theme_font_size(SNAME("bold_size"), SNAME("EditorFonts"));
+	Ref<Font> font = get_theme_font(SNAME("bold"), EditorStringName(EditorFonts));
+	int font_size = get_theme_font_size(SNAME("bold_size"), EditorStringName(EditorFonts));
 
 	for (int i = 0; i < frames_ordered.size(); ++i) {
 		const int idx = frames_ordered[i].second;
@@ -187,7 +188,7 @@ void SpriteFramesEditor::_sheet_preview_input(const Ref<InputEvent> &p_event) {
 					// Prevent double-toggling the same frame when moving the mouse when the mouse button is still held.
 					frames_toggled_by_mouse_hover.insert(this_idx);
 
-					if (mb->is_ctrl_pressed()) {
+					if (mb->is_command_or_control_pressed()) {
 						frames_selected.erase(this_idx);
 					} else if (!frames_selected.has(this_idx)) {
 						frames_selected.insert(this_idx, selected_count);
@@ -254,6 +255,7 @@ void SpriteFramesEditor::_sheet_scroll_input(const Ref<InputEvent> &p_event) {
 		// Zoom in/out using Ctrl + mouse wheel. This is done on the ScrollContainer
 		// to allow performing this action anywhere, even if the cursor isn't
 		// hovering the texture in the workspace.
+		// keep CTRL and not CMD_OR_CTRL as CTRL is expected even on MacOS.
 		if (mb->get_button_index() == MouseButton::WHEEL_UP && mb->is_pressed() && mb->is_ctrl_pressed()) {
 			_sheet_zoom_on_position(scale_ratio, mb->get_position());
 			// Don't scroll up after zooming in.
@@ -494,9 +496,9 @@ void SpriteFramesEditor::_toggle_show_settings() {
 
 void SpriteFramesEditor::_update_show_settings() {
 	if (is_layout_rtl()) {
-		toggle_settings_button->set_icon(get_theme_icon(split_sheet_settings_vb->is_visible() ? SNAME("Back") : SNAME("Forward"), SNAME("EditorIcons")));
+		toggle_settings_button->set_icon(get_editor_theme_icon(split_sheet_settings_vb->is_visible() ? SNAME("Back") : SNAME("Forward")));
 	} else {
-		toggle_settings_button->set_icon(get_theme_icon(split_sheet_settings_vb->is_visible() ? SNAME("Forward") : SNAME("Back"), SNAME("EditorIcons")));
+		toggle_settings_button->set_icon(get_editor_theme_icon(split_sheet_settings_vb->is_visible() ? SNAME("Forward") : SNAME("Back")));
 	}
 }
 
@@ -550,36 +552,36 @@ void SpriteFramesEditor::_notification(int p_what) {
 			[[fallthrough]];
 		}
 		case NOTIFICATION_THEME_CHANGED: {
-			autoplay_icon = get_theme_icon(SNAME("AutoPlay"), SNAME("EditorIcons"));
-			stop_icon = get_theme_icon(SNAME("Stop"), SNAME("EditorIcons"));
-			pause_icon = get_theme_icon(SNAME("Pause"), SNAME("EditorIcons"));
+			autoplay_icon = get_editor_theme_icon(SNAME("AutoPlay"));
+			stop_icon = get_editor_theme_icon(SNAME("Stop"));
+			pause_icon = get_editor_theme_icon(SNAME("Pause"));
 			_update_stop_icon();
 
-			autoplay->set_icon(get_theme_icon(SNAME("AutoPlay"), SNAME("EditorIcons")));
-			anim_loop->set_icon(get_theme_icon(SNAME("Loop"), SNAME("EditorIcons")));
-			play->set_icon(get_theme_icon(SNAME("PlayStart"), SNAME("EditorIcons")));
-			play_from->set_icon(get_theme_icon(SNAME("Play"), SNAME("EditorIcons")));
-			play_bw->set_icon(get_theme_icon(SNAME("PlayStartBackwards"), SNAME("EditorIcons")));
-			play_bw_from->set_icon(get_theme_icon(SNAME("PlayBackwards"), SNAME("EditorIcons")));
+			autoplay->set_icon(get_editor_theme_icon(SNAME("AutoPlay")));
+			anim_loop->set_icon(get_editor_theme_icon(SNAME("Loop")));
+			play->set_icon(get_editor_theme_icon(SNAME("PlayStart")));
+			play_from->set_icon(get_editor_theme_icon(SNAME("Play")));
+			play_bw->set_icon(get_editor_theme_icon(SNAME("PlayStartBackwards")));
+			play_bw_from->set_icon(get_editor_theme_icon(SNAME("PlayBackwards")));
 
-			load->set_icon(get_theme_icon(SNAME("Load"), SNAME("EditorIcons")));
-			load_sheet->set_icon(get_theme_icon(SNAME("SpriteSheet"), SNAME("EditorIcons")));
-			copy->set_icon(get_theme_icon(SNAME("ActionCopy"), SNAME("EditorIcons")));
-			paste->set_icon(get_theme_icon(SNAME("ActionPaste"), SNAME("EditorIcons")));
-			empty_before->set_icon(get_theme_icon(SNAME("InsertBefore"), SNAME("EditorIcons")));
-			empty_after->set_icon(get_theme_icon(SNAME("InsertAfter"), SNAME("EditorIcons")));
-			move_up->set_icon(get_theme_icon(SNAME("MoveLeft"), SNAME("EditorIcons")));
-			move_down->set_icon(get_theme_icon(SNAME("MoveRight"), SNAME("EditorIcons")));
-			delete_frame->set_icon(get_theme_icon(SNAME("Remove"), SNAME("EditorIcons")));
-			zoom_out->set_icon(get_theme_icon(SNAME("ZoomLess"), SNAME("EditorIcons")));
-			zoom_reset->set_icon(get_theme_icon(SNAME("ZoomReset"), SNAME("EditorIcons")));
-			zoom_in->set_icon(get_theme_icon(SNAME("ZoomMore"), SNAME("EditorIcons")));
-			add_anim->set_icon(get_theme_icon(SNAME("New"), SNAME("EditorIcons")));
-			delete_anim->set_icon(get_theme_icon(SNAME("Remove"), SNAME("EditorIcons")));
-			anim_search_box->set_right_icon(get_theme_icon(SNAME("Search"), SNAME("EditorIcons")));
-			split_sheet_zoom_out->set_icon(get_theme_icon(SNAME("ZoomLess"), SNAME("EditorIcons")));
-			split_sheet_zoom_reset->set_icon(get_theme_icon(SNAME("ZoomReset"), SNAME("EditorIcons")));
-			split_sheet_zoom_in->set_icon(get_theme_icon(SNAME("ZoomMore"), SNAME("EditorIcons")));
+			load->set_icon(get_editor_theme_icon(SNAME("Load")));
+			load_sheet->set_icon(get_editor_theme_icon(SNAME("SpriteSheet")));
+			copy->set_icon(get_editor_theme_icon(SNAME("ActionCopy")));
+			paste->set_icon(get_editor_theme_icon(SNAME("ActionPaste")));
+			empty_before->set_icon(get_editor_theme_icon(SNAME("InsertBefore")));
+			empty_after->set_icon(get_editor_theme_icon(SNAME("InsertAfter")));
+			move_up->set_icon(get_editor_theme_icon(SNAME("MoveLeft")));
+			move_down->set_icon(get_editor_theme_icon(SNAME("MoveRight")));
+			delete_frame->set_icon(get_editor_theme_icon(SNAME("Remove")));
+			zoom_out->set_icon(get_editor_theme_icon(SNAME("ZoomLess")));
+			zoom_reset->set_icon(get_editor_theme_icon(SNAME("ZoomReset")));
+			zoom_in->set_icon(get_editor_theme_icon(SNAME("ZoomMore")));
+			add_anim->set_icon(get_editor_theme_icon(SNAME("New")));
+			delete_anim->set_icon(get_editor_theme_icon(SNAME("Remove")));
+			anim_search_box->set_right_icon(get_editor_theme_icon(SNAME("Search")));
+			split_sheet_zoom_out->set_icon(get_editor_theme_icon(SNAME("ZoomLess")));
+			split_sheet_zoom_reset->set_icon(get_editor_theme_icon(SNAME("ZoomReset")));
+			split_sheet_zoom_in->set_icon(get_editor_theme_icon(SNAME("ZoomMore")));
 			split_sheet_scroll->add_theme_style_override("panel", get_theme_stylebox(SNAME("panel"), SNAME("Tree")));
 
 			_update_show_settings();
@@ -854,7 +856,7 @@ void SpriteFramesEditor::_animation_selected() {
 	}
 
 	TreeItem *selected = animations->get_selected();
-	ERR_FAIL_COND(!selected);
+	ERR_FAIL_NULL(selected);
 	edited_anim = selected->get_text(0);
 
 	if (animated_sprite) {
@@ -1484,7 +1486,7 @@ void SpriteFramesEditor::drop_data_fw(const Point2 &p_point, const Variant &p_da
 	if (String(d["type"]) == "files") {
 		Vector<String> files = d["files"];
 
-		if (Input::get_singleton()->is_key_pressed(Key::CTRL)) {
+		if (Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL)) {
 			_prepare_sprite_sheet(files[0]);
 		} else {
 			_file_load_request(files, at_pos);

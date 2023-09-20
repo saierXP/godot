@@ -87,12 +87,7 @@ void ViewportTexture::setup_local_to_scene() {
 	}
 }
 
-void ViewportTexture::set_viewport_path_in_scene(const NodePath &p_path) {
-	if (path == p_path) {
-		return;
-	}
-
-	path = p_path;
+void ViewportTexture::reset_local_to_scene() {
 	vp_changed = true;
 
 	if (vp) {
@@ -104,6 +99,16 @@ void ViewportTexture::set_viewport_path_in_scene(const NodePath &p_path) {
 		proxy_ph = RS::get_singleton()->texture_2d_placeholder_create();
 		RS::get_singleton()->texture_proxy_update(proxy, proxy_ph);
 	}
+}
+
+void ViewportTexture::set_viewport_path_in_scene(const NodePath &p_path) {
+	if (path == p_path) {
+		return;
+	}
+
+	path = p_path;
+
+	reset_local_to_scene();
 
 	if (get_local_scene() && !path.is_empty()) {
 		setup_local_to_scene();
@@ -314,16 +319,16 @@ void Viewport::_sub_window_update(Window *p_window) {
 	Rect2i r = Rect2i(p_window->get_position(), sw.window->get_size());
 
 	if (!p_window->get_flag(Window::FLAG_BORDERLESS)) {
-		Ref<StyleBox> panel = p_window->get_theme_stylebox(gui.subwindow_focused == p_window ? SNAME("embedded_border") : SNAME("embedded_unfocused_border"));
+		Ref<StyleBox> panel = gui.subwindow_focused == p_window ? p_window->theme_cache.embedded_border : p_window->theme_cache.embedded_unfocused_border;
 		panel->draw(sw.canvas_item, r);
 
 		// Draw the title bar text.
-		Ref<Font> title_font = p_window->get_theme_font(SNAME("title_font"));
-		int font_size = p_window->get_theme_font_size(SNAME("title_font_size"));
-		Color title_color = p_window->get_theme_color(SNAME("title_color"));
-		int title_height = p_window->get_theme_constant(SNAME("title_height"));
-		int close_h_ofs = p_window->get_theme_constant(SNAME("close_h_offset"));
-		int close_v_ofs = p_window->get_theme_constant(SNAME("close_v_offset"));
+		Ref<Font> title_font = p_window->theme_cache.title_font;
+		int font_size = p_window->theme_cache.title_font_size;
+		Color title_color = p_window->theme_cache.title_color;
+		int title_height = p_window->theme_cache.title_height;
+		int close_h_ofs = p_window->theme_cache.close_h_offset;
+		int close_v_ofs = p_window->theme_cache.close_v_offset;
 
 		TextLine title_text = TextLine(p_window->atr(p_window->get_title()), title_font, font_size);
 		title_text.set_width(r.size.width - panel->get_minimum_size().x - close_h_ofs);
@@ -331,15 +336,15 @@ void Viewport::_sub_window_update(Window *p_window) {
 		int x = (r.size.width - title_text.get_size().x) / 2;
 		int y = (-title_height - title_text.get_size().y) / 2;
 
-		Color font_outline_color = p_window->get_theme_color(SNAME("title_outline_modulate"));
-		int outline_size = p_window->get_theme_constant(SNAME("title_outline_size"));
+		Color font_outline_color = p_window->theme_cache.title_outline_modulate;
+		int outline_size = p_window->theme_cache.title_outline_size;
 		if (outline_size > 0 && font_outline_color.a > 0) {
 			title_text.draw_outline(sw.canvas_item, r.position + Point2(x, y), outline_size, font_outline_color);
 		}
 		title_text.draw(sw.canvas_item, r.position + Point2(x, y), title_color);
 
 		bool pressed = gui.subwindow_focused == sw.window && gui.subwindow_drag == SUB_WINDOW_DRAG_CLOSE && gui.subwindow_drag_close_inside;
-		Ref<Texture2D> close_icon = p_window->get_theme_icon(pressed ? "close_pressed" : "close");
+		Ref<Texture2D> close_icon = pressed ? p_window->theme_cache.close_pressed : p_window->theme_cache.close;
 		close_icon->draw(sw.canvas_item, r.position + Vector2(r.size.width - close_h_ofs, -close_v_ofs));
 	}
 
@@ -363,6 +368,7 @@ void Viewport::_sub_window_grab_focus(Window *p_window) {
 		return;
 	}
 
+	// The index needs to be update before every usage in case an event callback changed the window list.
 	int index = _sub_window_find(p_window);
 	ERR_FAIL_COND(index == -1);
 
@@ -374,6 +380,8 @@ void Viewport::_sub_window_grab_focus(Window *p_window) {
 			gui.subwindow_drag = SUB_WINDOW_DRAG_DISABLED;
 		}
 		// Can only move to foreground, but no focus granted.
+		index = _sub_window_find(p_window);
+		ERR_FAIL_COND(index == -1);
 		SubWindow sw = gui.sub_windows[index];
 		gui.sub_windows.remove_at(index);
 		gui.sub_windows.push_back(sw);
@@ -401,6 +409,8 @@ void Viewport::_sub_window_grab_focus(Window *p_window) {
 	gui.subwindow_focused->_event_callback(DisplayServer::WINDOW_EVENT_FOCUS_IN);
 
 	{ // Move to foreground.
+		index = _sub_window_find(p_window);
+		ERR_FAIL_COND(index == -1);
 		SubWindow sw = gui.sub_windows[index];
 		gui.sub_windows.remove_at(index);
 		gui.sub_windows.push_back(sw);
@@ -1479,6 +1489,9 @@ void Viewport::_gui_show_tooltip() {
 	PopupPanel *panel = memnew(PopupPanel);
 	panel->set_theme_type_variation(SNAME("TooltipPanel"));
 
+	// Ensure no opaque background behind the panel as its StyleBox can be partially transparent (e.g. corners).
+	panel->set_transparent_background(true);
+
 	// Controls can implement `make_custom_tooltip` to provide their own tooltip.
 	// This should be a Control node which will be added as child to a TooltipPanel.
 	Control *base_tooltip = tooltip_owner->make_custom_tooltip(tooltip_text);
@@ -2029,7 +2042,7 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 					Window *sw = embedder->gui.sub_windows[i].window;
 					Rect2 swrect = Rect2i(sw->get_position(), sw->get_size());
 					if (!sw->get_flag(Window::FLAG_BORDERLESS)) {
-						int title_height = sw->get_theme_constant(SNAME("title_height"));
+						int title_height = sw->theme_cache.title_height;
 						swrect.position.y -= title_height;
 						swrect.size.y += title_height;
 					}
@@ -2439,6 +2452,7 @@ Window *Viewport::get_base_window() const {
 
 	return w;
 }
+
 void Viewport::_gui_remove_focus_for_window(Node *p_window) {
 	if (get_base_window() == p_window) {
 		gui_release_focus();
@@ -2513,6 +2527,7 @@ void Viewport::_drop_physics_mouseover(bool p_paused_only) {
 
 void Viewport::_cleanup_mouseover_colliders(bool p_clean_all_frames, bool p_paused_only, uint64_t p_frame_reference) {
 	List<ObjectID> to_erase;
+	List<ObjectID> to_mouse_exit;
 
 	for (const KeyValue<ObjectID, uint64_t> &E : physics_2d_mouseover) {
 		if (!p_clean_all_frames && E.value == p_frame_reference) {
@@ -2526,7 +2541,7 @@ void Viewport::_cleanup_mouseover_colliders(bool p_clean_all_frames, bool p_paus
 				if (p_clean_all_frames && p_paused_only && co->can_process()) {
 					continue;
 				}
-				co->_mouse_exit();
+				to_mouse_exit.push_back(E.key);
 			}
 		}
 		to_erase.push_back(E.key);
@@ -2539,6 +2554,7 @@ void Viewport::_cleanup_mouseover_colliders(bool p_clean_all_frames, bool p_paus
 
 	// Per-shape.
 	List<Pair<ObjectID, int>> shapes_to_erase;
+	List<Pair<ObjectID, int>> shapes_to_mouse_exit;
 
 	for (KeyValue<Pair<ObjectID, int>, uint64_t> &E : physics_2d_shape_mouseover) {
 		if (!p_clean_all_frames && E.value == p_frame_reference) {
@@ -2552,7 +2568,7 @@ void Viewport::_cleanup_mouseover_colliders(bool p_clean_all_frames, bool p_paus
 				if (p_clean_all_frames && p_paused_only && co->can_process()) {
 					continue;
 				}
-				co->_mouse_shape_exit(E.key.second);
+				shapes_to_mouse_exit.push_back(E.key);
 			}
 		}
 		shapes_to_erase.push_back(E.key);
@@ -2561,6 +2577,21 @@ void Viewport::_cleanup_mouseover_colliders(bool p_clean_all_frames, bool p_paus
 	while (shapes_to_erase.size()) {
 		physics_2d_shape_mouseover.erase(shapes_to_erase.front()->get());
 		shapes_to_erase.pop_front();
+	}
+
+	while (to_mouse_exit.size()) {
+		Object *o = ObjectDB::get_instance(to_mouse_exit.front()->get());
+		CollisionObject2D *co = Object::cast_to<CollisionObject2D>(o);
+		co->_mouse_exit();
+		to_mouse_exit.pop_front();
+	}
+
+	while (shapes_to_mouse_exit.size()) {
+		Pair<ObjectID, int> e = shapes_to_mouse_exit.front()->get();
+		Object *o = ObjectDB::get_instance(e.first);
+		CollisionObject2D *co = Object::cast_to<CollisionObject2D>(o);
+		co->_mouse_shape_exit(e.second);
+		shapes_to_mouse_exit.pop_front();
 	}
 }
 
@@ -2641,7 +2672,7 @@ Viewport::SubWindowResize Viewport::_sub_window_get_resize_margin(Window *p_subw
 
 	Rect2i r = Rect2i(p_subwindow->get_position(), p_subwindow->get_size());
 
-	int title_height = p_subwindow->get_theme_constant(SNAME("title_height"));
+	int title_height = p_subwindow->theme_cache.title_height;
 
 	r.position.y -= title_height;
 	r.size.y += title_height;
@@ -2653,7 +2684,7 @@ Viewport::SubWindowResize Viewport::_sub_window_get_resize_margin(Window *p_subw
 	int dist_x = p_point.x < r.position.x ? (p_point.x - r.position.x) : (p_point.x > (r.position.x + r.size.x) ? (p_point.x - (r.position.x + r.size.x)) : 0);
 	int dist_y = p_point.y < r.position.y ? (p_point.y - r.position.y) : (p_point.y > (r.position.y + r.size.y) ? (p_point.y - (r.position.y + r.size.y)) : 0);
 
-	int limit = p_subwindow->get_theme_constant(SNAME("resize_margin"));
+	int limit = p_subwindow->theme_cache.resize_margin;
 
 	if (ABS(dist_x) > limit) {
 		return SUB_WINDOW_RESIZE_DISABLED;
@@ -2838,7 +2869,7 @@ bool Viewport::_sub_windows_forward_input(const Ref<InputEvent> &p_event) {
 
 			if (!sw.window->get_flag(Window::FLAG_BORDERLESS)) {
 				// Check top bar.
-				int title_height = sw.window->get_theme_constant(SNAME("title_height"));
+				int title_height = sw.window->theme_cache.title_height;
 				Rect2i title_bar = r;
 				title_bar.position.y -= title_height;
 				title_bar.size.y = title_height;
@@ -2846,9 +2877,9 @@ bool Viewport::_sub_windows_forward_input(const Ref<InputEvent> &p_event) {
 				if (title_bar.size.y > 0 && title_bar.has_point(mb->get_position())) {
 					click_on_window = sw.window;
 
-					int close_h_ofs = sw.window->get_theme_constant(SNAME("close_h_offset"));
-					int close_v_ofs = sw.window->get_theme_constant(SNAME("close_v_offset"));
-					Ref<Texture2D> close_icon = sw.window->get_theme_icon(SNAME("close"));
+					int close_h_ofs = sw.window->theme_cache.close_h_offset;
+					int close_v_ofs = sw.window->theme_cache.close_v_offset;
+					Ref<Texture2D> close_icon = sw.window->theme_cache.close;
 
 					Rect2 close_rect;
 					close_rect.position = Vector2(r.position.x + r.size.x - close_h_ofs, r.position.y - close_v_ofs);
@@ -2955,7 +2986,7 @@ bool Viewport::_sub_windows_forward_input(const Ref<InputEvent> &p_event) {
 
 void Viewport::_update_mouse_over() {
 	// Update gui.mouse_over and gui.subwindow_over in all Viewports.
-	// Send necessary mouse_enter/mouse_exit signals and the NOTIFICATION_VP_MOUSE_ENTER/NOTIFICATION_VP_MOUSE_EXIT notifications for every Viewport in the SceneTree.
+	// Send necessary mouse_enter/mouse_exit signals and the MOUSE_ENTER/MOUSE_EXIT notifications for every Viewport in the SceneTree.
 
 	if (is_attached_in_viewport()) {
 		// Execute this function only, when it is processed by a native Window or a SubViewport, that has no SubViewportContainer as parent.
@@ -2988,8 +3019,8 @@ void Viewport::_update_mouse_over(Vector2 p_pos) {
 			Rect2 swrect_border = swrect;
 
 			if (!sw->get_flag(Window::FLAG_BORDERLESS)) {
-				int title_height = sw->get_theme_constant(SNAME("title_height"));
-				int margin = sw->get_theme_constant(SNAME("resize_margin"));
+				int title_height = sw->theme_cache.title_height;
+				int margin = sw->theme_cache.resize_margin;
 				swrect_border.position.y -= title_height + margin;
 				swrect_border.size.y += title_height + margin * 2;
 				swrect_border.position.x -= margin;
@@ -3009,7 +3040,7 @@ void Viewport::_update_mouse_over(Vector2 p_pos) {
 						}
 						gui.subwindow_over = sw;
 						if (!sw->is_input_disabled()) {
-							sw->notification(NOTIFICATION_VP_MOUSE_ENTER);
+							sw->_propagate_window_notification(sw, NOTIFICATION_WM_MOUSE_ENTER);
 						}
 					}
 					if (!sw->is_input_disabled()) {
@@ -3654,6 +3685,15 @@ void Viewport::set_embedding_subwindows(bool p_embed) {
 bool Viewport::is_embedding_subwindows() const {
 	ERR_READ_THREAD_GUARD_V(false);
 	return gui.embed_subwindows_hint;
+}
+
+TypedArray<Window> Viewport::get_embedded_subwindows() const {
+	TypedArray<Window> windows;
+	for (int i = 0; i < gui.sub_windows.size(); i++) {
+		windows.append(gui.sub_windows[i].window);
+	}
+
+	return windows;
 }
 
 void Viewport::subwindow_set_popup_safe_rect(Window *p_window, const Rect2i &p_rect) {
@@ -4384,6 +4424,7 @@ void Viewport::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_embedding_subwindows", "enable"), &Viewport::set_embedding_subwindows);
 	ClassDB::bind_method(D_METHOD("is_embedding_subwindows"), &Viewport::is_embedding_subwindows);
+	ClassDB::bind_method(D_METHOD("get_embedded_subwindows"), &Viewport::get_embedded_subwindows);
 
 	ClassDB::bind_method(D_METHOD("set_canvas_cull_mask", "mask"), &Viewport::set_canvas_cull_mask);
 	ClassDB::bind_method(D_METHOD("get_canvas_cull_mask"), &Viewport::get_canvas_cull_mask);

@@ -49,7 +49,7 @@ private:
 
 	bool emitting = false;
 	bool active = false;
-	bool signal_cancled = false;
+	bool signal_canceled = false;
 	bool one_shot = false;
 	int amount = 0;
 	double lifetime = 0.0;
@@ -169,6 +169,8 @@ public:
 
 	void restart();
 	Rect2 capture_rect() const;
+	void convert_from_particles(Node *p_particles);
+
 	GPUParticles2D();
 	~GPUParticles2D();
 };

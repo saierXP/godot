@@ -113,7 +113,7 @@ private:
 	PopupMenu *menu_dir = nullptr;
 	PopupMenu *menu_ctl = nullptr;
 
-	bool caret_mid_grapheme_enabled = true;
+	bool caret_mid_grapheme_enabled = false;
 
 	int caret_column = 0;
 	float scroll_offset = 0.0;
@@ -246,13 +246,15 @@ private:
 
 protected:
 	bool _is_over_clear_button(const Point2 &p_pos) const;
+
 	virtual void _update_theme_item_cache() override;
+
 	void _notification(int p_what);
+	void _validate_property(PropertyInfo &p_property) const;
 	static void _bind_methods();
+
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_event) override;
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
-
-	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_horizontal_alignment(HorizontalAlignment p_alignment);

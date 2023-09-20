@@ -35,17 +35,32 @@
 #include "editor/plugins/node_3d_editor_gizmos.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/path_3d.h"
-#include "scene/gui/separator.h"
 
+class HBoxContainer;
 class MenuButton;
 
 class Path3DGizmo : public EditorNode3DGizmo {
 	GDCLASS(Path3DGizmo, EditorNode3DGizmo);
 
+	// Map handle id to control point id and handle type.
+	enum HandleType {
+		HANDLE_TYPE_IN,
+		HANDLE_TYPE_OUT,
+		HANDLE_TYPE_TILT,
+	};
+
+	struct HandleInfo {
+		int point_idx; // Index of control point.
+		HandleType type; // Type of this handle.
+	};
+
 	Path3D *path = nullptr;
 	mutable Vector3 original;
 	mutable float orig_in_length;
 	mutable float orig_out_length;
+
+	// Cache information of secondary handles.
+	Vector<HandleInfo> _secondary_handles_info;
 
 public:
 	virtual String get_handle_name(int p_id, bool p_secondary) const override;
@@ -72,7 +87,7 @@ public:
 class Path3DEditorPlugin : public EditorPlugin {
 	GDCLASS(Path3DEditorPlugin, EditorPlugin);
 
-	Separator *sep = nullptr;
+	HBoxContainer *topmenu_bar = nullptr;
 	Button *curve_create = nullptr;
 	Button *curve_edit = nullptr;
 	Button *curve_edit_curve = nullptr;

@@ -59,6 +59,7 @@ void GDScriptLanguage::get_string_delimiters(List<String> *p_delimiters) const {
 	p_delimiters->push_back("' '");
 	p_delimiters->push_back("\"\"\" \"\"\"");
 	p_delimiters->push_back("''' '''");
+	// NOTE: StringName, NodePath and r-strings are not listed here.
 }
 
 bool GDScriptLanguage::is_using_templates() {
@@ -500,7 +501,7 @@ String GDScriptLanguage::make_function(const String &p_class, const String &p_na
 			s += p_args[i].get_slice(":", 0);
 			if (th) {
 				String type = p_args[i].get_slice(":", 1);
-				if (!type.is_empty() && type != "var") {
+				if (!type.is_empty()) {
 					s += ": " + type;
 				}
 			}
@@ -1223,6 +1224,9 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 					for (const PropertyInfo &E : members) {
 						if (!String(E.name).contains("/")) {
 							ScriptLanguage::CodeCompletionOption option(E.name, ScriptLanguage::CODE_COMPLETION_KIND_MEMBER);
+							if (GDScriptParser::theme_color_names.has(E.name)) {
+								option.theme_color_name = GDScriptParser::theme_color_names[E.name];
+							}
 							r_result.insert(option.display, option);
 						}
 					}
@@ -1472,8 +1476,13 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 	if (p_expression->is_constant) {
 		// Already has a value, so just use that.
 		r_type = _type_from_variant(p_expression->reduced_value);
-		if (p_expression->get_datatype().kind == GDScriptParser::DataType::ENUM) {
-			r_type.type = p_expression->get_datatype();
+		switch (p_expression->get_datatype().kind) {
+			case GDScriptParser::DataType::ENUM:
+			case GDScriptParser::DataType::CLASS:
+				r_type.type = p_expression->get_datatype();
+				break;
+			default:
+				break;
 		}
 		found = true;
 	} else {

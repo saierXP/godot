@@ -440,7 +440,7 @@ namespace GodotTools
         {
             base._EnablePlugin();
 
-            ProjectSettingsChanged += GodotSharpDirs.DetermineProjectLocation;
+            ProjectSettings.SettingsChanged += GodotSharpDirs.DetermineProjectLocation;
 
             if (Instance != null)
                 throw new InvalidOperationException();
@@ -499,7 +499,7 @@ namespace GodotTools
             _toolBarBuildButton = new Button
             {
                 Flat = true,
-                Icon = editorBaseControl.GetThemeIcon("BuildCSharp", "EditorIcons"),
+                Icon = EditorInterface.Singleton.GetEditorTheme().GetIcon("BuildCSharp", "EditorIcons"),
                 FocusMode = Control.FocusModeEnum.None,
                 Shortcut = EditorDefShortcut("mono/build_solution", "Build Project".TTR(), (Key)KeyModifierMask.MaskAlt | Key.B),
                 ShortcutInTooltip = true,

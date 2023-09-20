@@ -69,6 +69,7 @@ class GDScript : public Script {
 		StringName setter;
 		StringName getter;
 		GDScriptDataType data_type;
+		PropertyInfo property_info;
 	};
 
 	struct ClearData {
@@ -100,7 +101,7 @@ class GDScript : public Script {
 	HashMap<StringName, GDScriptFunction *> member_functions;
 	HashMap<StringName, MemberInfo> member_indices; //members are just indices to the instantiated script.
 	HashMap<StringName, Ref<GDScript>> subclasses;
-	HashMap<StringName, Vector<StringName>> _signals;
+	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
 
 #ifdef TOOLS_ENABLED
@@ -126,8 +127,6 @@ class GDScript : public Script {
 	void _add_doc(const DocData::ClassDoc &p_inner_class);
 #endif
 
-	HashMap<StringName, PropertyInfo> member_info;
-
 	GDScriptFunction *implicit_initializer = nullptr;
 	GDScriptFunction *initializer = nullptr; //direct pointer to new , faster to locate
 	GDScriptFunction *implicit_ready = nullptr;
@@ -142,8 +141,10 @@ class GDScript : public Script {
 	//exported members
 	String source;
 	String path;
-	String name;
+	StringName local_name; // Inner class identifier or `class_name`.
+	StringName global_name; // `class_name`.
 	String fully_qualified_name;
+	String simplified_icon_path;
 	SelfList<GDScript> script_list;
 
 	SelfList<GDScriptFunctionState>::List pending_func_states;
@@ -167,14 +168,10 @@ class GDScript : public Script {
 	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false, PlaceHolderScriptInstance *p_instance_to_update = nullptr);
 
 	void _save_orphaned_subclasses(GDScript::ClearData *p_clear_data);
-	void _init_rpc_methods_properties();
 
 	void _get_script_property_list(List<PropertyInfo> *r_list, bool p_include_base) const;
 	void _get_script_method_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_signal_list(List<MethodInfo> *r_list, bool p_include_base) const;
-
-	// This method will map the class name from "RefCounted" to "MyClass.InnerClass".
-	static String _get_gdscript_reference_class_name(const GDScript *p_gdscript);
 
 	GDScript *_get_gdscript_from_variant(const Variant &p_variant);
 	void _get_dependencies(RBSet<GDScript *> &p_dependencies, const GDScript *p_except);
@@ -192,6 +189,8 @@ public:
 #ifdef DEBUG_ENABLED
 	static String debug_get_script_name(const Ref<Script> &p_script);
 #endif
+
+	_FORCE_INLINE_ StringName get_local_name() const { return local_name; }
 
 	void clear(GDScript::ClearData *p_clear_data = nullptr);
 
@@ -213,7 +212,6 @@ public:
 	}
 	const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
 	const Ref<GDScriptNativeClass> &get_native() const { return native; }
-	const String &get_script_class_name() const { return name; }
 
 	RBSet<GDScript *> get_dependencies();
 	RBSet<GDScript *> get_inverted_dependencies();
@@ -250,6 +248,7 @@ public:
 	virtual Vector<DocData::ClassDoc> get_documentation() const override {
 		return docs;
 	}
+	virtual String get_class_icon_path() const override;
 #endif // TOOLS_ENABLED
 
 	virtual Error reload(bool p_keep_state = false) override;
@@ -319,6 +318,7 @@ public:
 	virtual bool get(const StringName &p_name, Variant &r_ret) const;
 	virtual void get_property_list(List<PropertyInfo> *p_properties) const;
 	virtual Variant::Type get_property_type(const StringName &p_name, bool *r_is_valid = nullptr) const;
+	virtual void validate_property(PropertyInfo &p_property) const;
 
 	virtual bool property_can_revert(const StringName &p_name) const;
 	virtual bool property_get_revert(const StringName &p_name, Variant &r_ret) const;
@@ -329,7 +329,7 @@ public:
 
 	Variant debug_get_member_by_index(int p_idx) const { return members[p_idx]; }
 
-	virtual void notification(int p_notification);
+	virtual void notification(int p_notification, bool p_reversed = false);
 	String to_string(bool *r_valid);
 
 	virtual Ref<Script> get_script() const;
@@ -466,6 +466,7 @@ public:
 		StringName _set;
 		StringName _get;
 		StringName _get_property_list;
+		StringName _validate_property;
 		StringName _property_can_revert;
 		StringName _property_get_revert;
 		StringName _script_source;

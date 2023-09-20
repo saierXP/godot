@@ -66,6 +66,10 @@ Variant::Type GDScriptParser::get_builtin_type(const StringName &p_type) {
 	return Variant::VARIANT_MAX;
 }
 
+#ifdef TOOLS_ENABLED
+HashMap<String, String> GDScriptParser::theme_color_names;
+#endif
+
 void GDScriptParser::cleanup() {
 	builtin_types.clear();
 }
@@ -120,6 +124,15 @@ GDScriptParser::GDScriptParser() {
 
 #ifdef DEBUG_ENABLED
 	is_ignoring_warnings = !(bool)GLOBAL_GET("debug/gdscript/warnings/enable");
+#endif
+
+#ifdef TOOLS_ENABLED
+	if (theme_color_names.is_empty()) {
+		theme_color_names.insert("x", "axis_x_color");
+		theme_color_names.insert("y", "axis_y_color");
+		theme_color_names.insert("z", "axis_z_color");
+		theme_color_names.insert("w", "axis_w_color");
+	}
 #endif
 }
 
@@ -370,8 +383,10 @@ GDScriptTokenizer::Token GDScriptParser::advance() {
 		push_error(current.literal);
 		current = tokenizer.scan();
 	}
-	for (Node *n : nodes_in_progress) {
-		update_extents(n);
+	if (previous.type != GDScriptTokenizer::Token::DEDENT) { // `DEDENT` belongs to the next non-empty line.
+		for (Node *n : nodes_in_progress) {
+			update_extents(n);
+		}
 	}
 	return previous;
 }
@@ -566,13 +581,14 @@ void GDScriptParser::parse_program() {
 	complete_extents(head);
 
 #ifdef TOOLS_ENABLED
-	for (const KeyValue<int, GDScriptTokenizer::CommentData> &E : tokenizer.get_comments()) {
-		if (E.value.new_line && E.value.comment.begins_with("##")) {
-			class_doc_line = MIN(class_doc_line, E.key);
+	const HashMap<int, GDScriptTokenizer::CommentData> &comments = tokenizer.get_comments();
+	int line = MIN(max_script_doc_line, head->end_line);
+	while (line > 0) {
+		if (comments.has(line) && comments[line].new_line && comments[line].comment.begins_with("##")) {
+			head->doc_data = parse_class_doc_comment(line);
+			break;
 		}
-	}
-	if (has_comment(class_doc_line, true)) {
-		head->doc_data = parse_class_doc_comment(class_doc_line, false);
+		line--;
 	}
 #endif // TOOLS_ENABLED
 
@@ -734,10 +750,6 @@ template <class T>
 void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static) {
 	advance();
 
-#ifdef TOOLS_ENABLED
-	int doc_comment_line = previous.start_line - 1;
-#endif // TOOLS_ENABLED
-
 	// Consume annotations.
 	List<AnnotationNode *> annotations;
 	while (!annotation_stack.is_empty()) {
@@ -749,11 +761,6 @@ void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(b
 			push_error(vformat(R"(Annotation "%s" cannot be applied to a %s.)", last_annotation->name, p_member_kind));
 			clear_unused_annotations();
 		}
-#ifdef TOOLS_ENABLED
-		if (last_annotation->start_line == doc_comment_line) {
-			doc_comment_line--;
-		}
-#endif // TOOLS_ENABLED
 	}
 
 	T *member = (this->*p_parse_function)(p_is_static);
@@ -761,28 +768,40 @@ void GDScriptParser::parse_class_member(T *(GDScriptParser::*p_parse_function)(b
 		return;
 	}
 
+#ifdef TOOLS_ENABLED
+	int doc_comment_line = member->start_line - 1;
+#endif // TOOLS_ENABLED
+
 	for (AnnotationNode *&annotation : annotations) {
 		member->annotations.push_back(annotation);
+#ifdef TOOLS_ENABLED
+		if (annotation->start_line <= doc_comment_line) {
+			doc_comment_line = annotation->start_line - 1;
+		}
+#endif // TOOLS_ENABLED
 	}
 
 #ifdef TOOLS_ENABLED
-	// Consume doc comments.
-	class_doc_line = MIN(class_doc_line, doc_comment_line - 1);
-
-	// Check whether current line has a doc comment
-	if (has_comment(previous.start_line, true)) {
-		if constexpr (std::is_same_v<T, ClassNode>) {
-			member->doc_data = parse_class_doc_comment(previous.start_line, true, true);
-		} else {
-			member->doc_data = parse_doc_comment(previous.start_line, true);
+	if constexpr (std::is_same_v<T, ClassNode>) {
+		if (has_comment(member->start_line, true)) {
+			// Inline doc comment.
+			member->doc_data = parse_class_doc_comment(member->start_line, true);
+		} else if (has_comment(doc_comment_line, true) && tokenizer.get_comments()[doc_comment_line].new_line) {
+			// Normal doc comment. Don't check `min_member_doc_line` because a class ends parsing after its members.
+			// This may not work correctly for cases like `var a; class B`, but it doesn't matter in practice.
+			member->doc_data = parse_class_doc_comment(doc_comment_line);
 		}
-	} else if (has_comment(doc_comment_line, true)) {
-		if constexpr (std::is_same_v<T, ClassNode>) {
-			member->doc_data = parse_class_doc_comment(doc_comment_line, true);
-		} else {
+	} else {
+		if (has_comment(member->start_line, true)) {
+			// Inline doc comment.
+			member->doc_data = parse_doc_comment(member->start_line, true);
+		} else if (doc_comment_line >= min_member_doc_line && has_comment(doc_comment_line, true) && tokenizer.get_comments()[doc_comment_line].new_line) {
+			// Normal doc comment.
 			member->doc_data = parse_doc_comment(doc_comment_line);
 		}
 	}
+
+	min_member_doc_line = member->end_line + 1; // Prevent multiple members from using the same doc comment.
 #endif // TOOLS_ENABLED
 
 	if (member->identifier != nullptr) {
@@ -1250,6 +1269,9 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 
 	push_multiline(true);
 	consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" after %s.)", named ? "enum name" : R"("enum")"));
+#ifdef TOOLS_ENABLED
+	int min_enum_value_doc_line = previous.end_line + 1;
+#endif
 
 	HashMap<StringName, int> elements;
 
@@ -1312,43 +1334,35 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 		}
 	} while (match(GDScriptTokenizer::Token::COMMA));
 
-	pop_multiline();
-	consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" for enum.)");
-
 #ifdef TOOLS_ENABLED
 	// Enum values documentation.
 	for (int i = 0; i < enum_node->values.size(); i++) {
-		int doc_comment_line = enum_node->values[i].line;
-		bool single_line = false;
+		int enum_value_line = enum_node->values[i].line;
+		int doc_comment_line = enum_value_line - 1;
 
-		if (has_comment(doc_comment_line, true)) {
-			single_line = true;
-		} else if (has_comment(doc_comment_line - 1, true)) {
-			doc_comment_line--;
-		} else {
-			continue;
-		}
-
-		if (i == enum_node->values.size() - 1) {
-			// If close bracket is same line as last value.
-			if (doc_comment_line == previous.start_line) {
-				break;
+		MemberDocData doc_data;
+		if (has_comment(enum_value_line, true)) {
+			// Inline doc comment.
+			if (i == enum_node->values.size() - 1 || enum_node->values[i + 1].line > enum_value_line) {
+				doc_data = parse_doc_comment(enum_value_line, true);
 			}
-		} else {
-			// If two values are same line.
-			if (doc_comment_line == enum_node->values[i + 1].line) {
-				continue;
-			}
+		} else if (doc_comment_line >= min_enum_value_doc_line && has_comment(doc_comment_line, true) && tokenizer.get_comments()[doc_comment_line].new_line) {
+			// Normal doc comment.
+			doc_data = parse_doc_comment(doc_comment_line);
 		}
 
 		if (named) {
-			enum_node->values.write[i].doc_data = parse_doc_comment(doc_comment_line, single_line);
+			enum_node->values.write[i].doc_data = doc_data;
 		} else {
-			current_class->set_enum_value_doc_data(enum_node->values[i].identifier->name, parse_doc_comment(doc_comment_line, single_line));
+			current_class->set_enum_value_doc_data(enum_node->values[i].identifier->name, doc_data);
 		}
+
+		min_enum_value_doc_line = enum_value_line + 1; // Prevent multiple enum values from using the same doc comment.
 	}
 #endif // TOOLS_ENABLED
 
+	pop_multiline();
+	consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" for enum.)");
 	complete_extents(enum_node);
 	end_statement("enum");
 
@@ -1850,7 +1864,18 @@ GDScriptParser::ForNode *GDScriptParser::parse_for() {
 		n_for->variable = parse_identifier();
 	}
 
-	consume(GDScriptTokenizer::Token::IN, R"(Expected "in" after "for" variable name.)");
+	if (match(GDScriptTokenizer::Token::COLON)) {
+		n_for->datatype_specifier = parse_type();
+		if (n_for->datatype_specifier == nullptr) {
+			push_error(R"(Expected type specifier after ":".)");
+		}
+	}
+
+	if (n_for->datatype_specifier == nullptr) {
+		consume(GDScriptTokenizer::Token::IN, R"(Expected "in" or ":" after "for" variable name.)");
+	} else {
+		consume(GDScriptTokenizer::Token::IN, R"(Expected "in" after "for" variable type specifier.)");
+	}
 
 	n_for->list = parse_expression(false);
 
@@ -2280,9 +2305,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_identifier(ExpressionNode 
 	IdentifierNode *identifier = alloc_node<IdentifierNode>();
 	complete_extents(identifier);
 	identifier->name = previous.get_identifier();
-#ifdef DEBUG_ENABLED
 	identifier->suite = current_suite;
-#endif
 
 	if (current_suite != nullptr && current_suite->has_local(identifier->name)) {
 		const SuiteNode::Local &declaration = current_suite->get_local(identifier->name);
@@ -2446,7 +2469,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_binary_operator(Expression
 	complete_extents(operation);
 
 	if (operation->right_operand == nullptr) {
-		push_error(vformat(R"(Expected expression after "%s" operator.")", op.get_name()));
+		push_error(vformat(R"(Expected expression after "%s" operator.)", op.get_name()));
 	}
 
 	// TODO: Also for unary, ternary, and assignment.
@@ -3035,10 +3058,8 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_get_node(ExpressionNode *p
 	if (previous.type == GDScriptTokenizer::Token::DOLLAR) {
 		// Detect initial slash, which will be handled in the loop if it matches.
 		match(GDScriptTokenizer::Token::SLASH);
-#ifdef DEBUG_ENABLED
 	} else {
 		get_node->use_dollar = false;
-#endif
 	}
 
 	int context_argument = 0;
@@ -3142,6 +3163,8 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_preload(ExpressionNode *p_
 GDScriptParser::ExpressionNode *GDScriptParser::parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign) {
 	LambdaNode *lambda = alloc_node<LambdaNode>();
 	lambda->parent_function = current_function;
+	lambda->parent_lambda = current_lambda;
+
 	FunctionNode *function = alloc_node<FunctionNode>();
 	function->source_lambda = lambda;
 
@@ -3168,6 +3191,9 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_lambda(ExpressionNode *p_p
 
 	FunctionNode *previous_function = current_function;
 	current_function = function;
+
+	LambdaNode *previous_lambda = current_lambda;
+	current_lambda = lambda;
 
 	SuiteNode *body = alloc_node<SuiteNode>();
 	body->parent_function = current_function;
@@ -3206,6 +3232,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_lambda(ExpressionNode *p_p
 	}
 
 	current_function = previous_function;
+	current_lambda = previous_lambda;
 	in_lambda = previous_in_lambda;
 	lambda->function = function;
 
@@ -3428,31 +3455,21 @@ bool GDScriptParser::has_comment(int p_line, bool p_must_be_doc) {
 }
 
 GDScriptParser::MemberDocData GDScriptParser::parse_doc_comment(int p_line, bool p_single_line) {
-	MemberDocData result;
+	ERR_FAIL_COND_V(!has_comment(p_line, true), MemberDocData());
 
 	const HashMap<int, GDScriptTokenizer::CommentData> &comments = tokenizer.get_comments();
-	ERR_FAIL_COND_V(!comments.has(p_line), result);
-
-	if (p_single_line) {
-		if (comments[p_line].comment.begins_with("##")) {
-			result.description = comments[p_line].comment.trim_prefix("##").strip_edges();
-			return result;
-		}
-		return result;
-	}
-
 	int line = p_line;
-	DocLineState state = DOC_LINE_NORMAL;
 
-	while (comments.has(line - 1)) {
-		if (!comments[line - 1].new_line || !comments[line - 1].comment.begins_with("##")) {
-			break;
+	if (!p_single_line) {
+		while (comments.has(line - 1) && comments[line - 1].new_line && comments[line - 1].comment.begins_with("##")) {
+			line--;
 		}
-		line--;
 	}
+
+	max_script_doc_line = MIN(max_script_doc_line, line - 1);
 
 	String space_prefix;
-	if (comments.has(line) && comments[line].comment.begins_with("##")) {
+	{
 		int i = 2;
 		for (; i < comments[line].comment.length(); i++) {
 			if (comments[line].comment[i] != ' ') {
@@ -3462,11 +3479,10 @@ GDScriptParser::MemberDocData GDScriptParser::parse_doc_comment(int p_line, bool
 		space_prefix = String(" ").repeat(i - 2);
 	}
 
-	while (comments.has(line)) {
-		if (!comments[line].new_line || !comments[line].comment.begins_with("##")) {
-			break;
-		}
+	DocLineState state = DOC_LINE_NORMAL;
+	MemberDocData result;
 
+	while (line <= p_line) {
 		String doc_line = comments[line].comment.trim_prefix("##");
 		line++;
 
@@ -3487,35 +3503,22 @@ GDScriptParser::MemberDocData GDScriptParser::parse_doc_comment(int p_line, bool
 	return result;
 }
 
-GDScriptParser::ClassDocData GDScriptParser::parse_class_doc_comment(int p_line, bool p_inner_class, bool p_single_line) {
-	ClassDocData result;
+GDScriptParser::ClassDocData GDScriptParser::parse_class_doc_comment(int p_line, bool p_single_line) {
+	ERR_FAIL_COND_V(!has_comment(p_line, true), ClassDocData());
 
 	const HashMap<int, GDScriptTokenizer::CommentData> &comments = tokenizer.get_comments();
-	ERR_FAIL_COND_V(!comments.has(p_line), result);
-
-	if (p_single_line) {
-		if (comments[p_line].comment.begins_with("##")) {
-			result.brief = comments[p_line].comment.trim_prefix("##").strip_edges();
-			return result;
-		}
-		return result;
-	}
-
 	int line = p_line;
-	DocLineState state = DOC_LINE_NORMAL;
-	bool is_in_brief = true;
 
-	if (p_inner_class) {
-		while (comments.has(line - 1)) {
-			if (!comments[line - 1].new_line || !comments[line - 1].comment.begins_with("##")) {
-				break;
-			}
+	if (!p_single_line) {
+		while (comments.has(line - 1) && comments[line - 1].new_line && comments[line - 1].comment.begins_with("##")) {
 			line--;
 		}
 	}
 
+	max_script_doc_line = MIN(max_script_doc_line, line - 1);
+
 	String space_prefix;
-	if (comments.has(line) && comments[line].comment.begins_with("##")) {
+	{
 		int i = 2;
 		for (; i < comments[line].comment.length(); i++) {
 			if (comments[line].comment[i] != ' ') {
@@ -3525,11 +3528,11 @@ GDScriptParser::ClassDocData GDScriptParser::parse_class_doc_comment(int p_line,
 		space_prefix = String(" ").repeat(i - 2);
 	}
 
-	while (comments.has(line)) {
-		if (!comments[line].new_line || !comments[line].comment.begins_with("##")) {
-			break;
-		}
+	DocLineState state = DOC_LINE_NORMAL;
+	bool is_in_brief = true;
+	ClassDocData result;
 
+	while (line <= p_line) {
 		String doc_line = comments[line].comment.trim_prefix("##");
 		line++;
 
@@ -3601,14 +3604,6 @@ GDScriptParser::ClassDocData GDScriptParser::parse_class_doc_comment(int p_line,
 			result.brief += _process_doc_line(doc_line, result.brief, space_prefix, state);
 		} else {
 			result.description += _process_doc_line(doc_line, result.description, space_prefix, state);
-		}
-	}
-
-	if (current_class->members.size() > 0) {
-		const ClassNode::Member &m = current_class->members[0];
-		int first_member_line = m.get_line();
-		if (first_member_line == line) {
-			result = ClassDocData(); // Clear result.
 		}
 	}
 
@@ -3827,18 +3822,31 @@ bool GDScriptParser::tool_annotation(const AnnotationNode *p_annotation, Node *p
 bool GDScriptParser::icon_annotation(const AnnotationNode *p_annotation, Node *p_node) {
 	ERR_FAIL_COND_V_MSG(p_node->type != Node::CLASS, false, R"("@icon" annotation can only be applied to classes.)");
 	ERR_FAIL_COND_V(p_annotation->resolved_arguments.is_empty(), false);
+
 	ClassNode *p_class = static_cast<ClassNode *>(p_node);
+	String path = p_annotation->resolved_arguments[0];
+
 #ifdef DEBUG_ENABLED
 	if (!p_class->icon_path.is_empty()) {
 		push_error(R"("@icon" annotation can only be used once.)", p_annotation);
 		return false;
 	}
-	if (String(p_annotation->resolved_arguments[0]).is_empty()) {
+	if (path.is_empty()) {
 		push_error(R"("@icon" annotation argument must contain the path to the icon.)", p_annotation->arguments[0]);
 		return false;
 	}
 #endif // DEBUG_ENABLED
-	p_class->icon_path = p_annotation->resolved_arguments[0];
+
+	p_class->icon_path = path;
+
+	if (path.is_empty() || path.is_absolute_path()) {
+		p_class->simplified_icon_path = path.simplify_path();
+	} else if (path.is_relative_path()) {
+		p_class->simplified_icon_path = script_path.get_base_dir().path_join(path).simplify_path();
+	} else {
+		p_class->simplified_icon_path = path;
+	}
+
 	return true;
 }
 
@@ -4056,23 +4064,29 @@ bool GDScriptParser::export_annotations(const AnnotationNode *p_annotation, Node
 				}
 			} break;
 			case GDScriptParser::DataType::ENUM: {
-				variable->export_info.type = Variant::INT;
-				variable->export_info.hint = PROPERTY_HINT_ENUM;
+				if (export_type.is_meta_type) {
+					variable->export_info.type = Variant::DICTIONARY;
+				} else {
+					variable->export_info.type = Variant::INT;
+					variable->export_info.hint = PROPERTY_HINT_ENUM;
 
-				String enum_hint_string;
-				bool first = true;
-				for (const KeyValue<StringName, int64_t> &E : export_type.enum_values) {
-					if (!first) {
-						enum_hint_string += ",";
-					} else {
-						first = false;
+					String enum_hint_string;
+					bool first = true;
+					for (const KeyValue<StringName, int64_t> &E : export_type.enum_values) {
+						if (!first) {
+							enum_hint_string += ",";
+						} else {
+							first = false;
+						}
+						enum_hint_string += E.key.operator String().capitalize().xml_escape();
+						enum_hint_string += ":";
+						enum_hint_string += String::num_int64(E.value).xml_escape();
 					}
-					enum_hint_string += E.key.operator String().capitalize().xml_escape();
-					enum_hint_string += ":";
-					enum_hint_string += String::num_int64(E.value).xml_escape();
-				}
 
-				variable->export_info.hint_string = enum_hint_string;
+					variable->export_info.hint_string = enum_hint_string;
+					variable->export_info.usage |= PROPERTY_USAGE_CLASS_IS_ENUM;
+					variable->export_info.class_name = String(export_type.native_type).replace("::", ".");
+				}
 			} break;
 			default:
 				push_error(R"(Export type can only be built-in, a resource, a node, or an enum.)", variable);
@@ -4274,7 +4288,7 @@ String GDScriptParser::SuiteNode::Local::get_name() const {
 		case SuiteNode::Local::FOR_VARIABLE:
 			return "for loop iterator";
 		case SuiteNode::Local::PATTERN_BIND:
-			return "pattern_bind";
+			return "pattern bind";
 		case SuiteNode::Local::UNDEFINED:
 			return "<undefined>";
 		default:
@@ -4329,6 +4343,104 @@ String GDScriptParser::DataType::to_string() const {
 	}
 
 	ERR_FAIL_V_MSG("<unresolved type>", "Kind set outside the enum range.");
+}
+
+PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) const {
+	PropertyInfo result;
+	result.name = p_name;
+	result.usage = PROPERTY_USAGE_NONE;
+
+	if (!is_hard_type()) {
+		result.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
+		return result;
+	}
+
+	switch (kind) {
+		case BUILTIN:
+			result.type = builtin_type;
+			if (builtin_type == Variant::ARRAY && has_container_element_type()) {
+				const DataType *elem_type = container_element_type;
+				switch (elem_type->kind) {
+					case BUILTIN:
+						result.hint = PROPERTY_HINT_ARRAY_TYPE;
+						result.hint_string = Variant::get_type_name(elem_type->builtin_type);
+						break;
+					case NATIVE:
+						result.hint = PROPERTY_HINT_ARRAY_TYPE;
+						result.hint_string = elem_type->native_type;
+						break;
+					case SCRIPT:
+						result.hint = PROPERTY_HINT_ARRAY_TYPE;
+						if (elem_type->script_type.is_valid() && elem_type->script_type->get_global_name() != StringName()) {
+							result.hint_string = elem_type->script_type->get_global_name();
+						} else {
+							result.hint_string = elem_type->native_type;
+						}
+						break;
+					case CLASS:
+						result.hint = PROPERTY_HINT_ARRAY_TYPE;
+						if (elem_type->class_type != nullptr && elem_type->class_type->get_global_name() != StringName()) {
+							result.hint_string = elem_type->class_type->get_global_name();
+						} else {
+							result.hint_string = elem_type->native_type;
+						}
+						break;
+					case ENUM:
+						result.hint = PROPERTY_HINT_ARRAY_TYPE;
+						result.hint_string = String(elem_type->native_type).replace("::", ".");
+						break;
+					case VARIANT:
+					case RESOLVING:
+					case UNRESOLVED:
+						break;
+				}
+			}
+			break;
+		case NATIVE:
+			result.type = Variant::OBJECT;
+			if (is_meta_type) {
+				result.class_name = GDScriptNativeClass::get_class_static();
+			} else {
+				result.class_name = native_type;
+			}
+			break;
+		case SCRIPT:
+			result.type = Variant::OBJECT;
+			if (is_meta_type) {
+				result.class_name = script_type.is_valid() ? script_type->get_class() : Script::get_class_static();
+			} else if (script_type.is_valid() && script_type->get_global_name() != StringName()) {
+				result.class_name = script_type->get_global_name();
+			} else {
+				result.class_name = native_type;
+			}
+			break;
+		case CLASS:
+			result.type = Variant::OBJECT;
+			if (is_meta_type) {
+				result.class_name = GDScript::get_class_static();
+			} else if (class_type != nullptr && class_type->get_global_name() != StringName()) {
+				result.class_name = class_type->get_global_name();
+			} else {
+				result.class_name = native_type;
+			}
+			break;
+		case ENUM:
+			if (is_meta_type) {
+				result.type = Variant::DICTIONARY;
+			} else {
+				result.type = Variant::INT;
+				result.usage |= PROPERTY_USAGE_CLASS_IS_ENUM;
+				result.class_name = String(native_type).replace("::", ".");
+			}
+			break;
+		case VARIANT:
+		case RESOLVING:
+		case UNRESOLVED:
+			result.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
+			break;
+	}
+
+	return result;
 }
 
 static Variant::Type _variant_type_to_typed_array_element_type(Variant::Type p_type) {

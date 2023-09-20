@@ -503,6 +503,11 @@ Error VulkanContext::_initialize_device_extensions() {
 	register_requested_device_extension(VK_KHR_16BIT_STORAGE_EXTENSION_NAME, false);
 	register_requested_device_extension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, false);
 	register_requested_device_extension(VK_KHR_MAINTENANCE_2_EXTENSION_NAME, false);
+	register_requested_device_extension(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, false);
+
+	if (Engine::get_singleton()->is_generate_spirv_debug_info_enabled()) {
+		register_requested_device_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, true);
+	}
 
 	// TODO consider the following extensions:
 	// - VK_KHR_spirv_1_4
@@ -764,6 +769,7 @@ Error VulkanContext::_check_capabilities() {
 			VkPhysicalDeviceFragmentShadingRateFeaturesKHR vrs_features = {};
 			VkPhysicalDevice16BitStorageFeaturesKHR storage_feature = {};
 			VkPhysicalDeviceMultiviewFeatures multiview_features = {};
+			VkPhysicalDevicePipelineCreationCacheControlFeatures pipeline_cache_control_features = {};
 
 			if (device_api_version >= VK_API_VERSION_1_2) {
 				device_features_vk12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -815,6 +821,15 @@ Error VulkanContext::_check_capabilities() {
 				next = &multiview_features;
 			}
 
+			if (is_device_extension_enabled(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME)) {
+				pipeline_cache_control_features = {
+					/*sType*/ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES,
+					/*pNext*/ next,
+					/*pipelineCreationCacheControl*/ false,
+				};
+				next = &pipeline_cache_control_features;
+			}
+
 			VkPhysicalDeviceFeatures2 device_features;
 			device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features.pNext = next;
@@ -854,6 +869,10 @@ Error VulkanContext::_check_capabilities() {
 				storage_buffer_capabilities.uniform_and_storage_buffer_16_bit_access_is_supported = storage_feature.uniformAndStorageBuffer16BitAccess;
 				storage_buffer_capabilities.storage_push_constant_16_is_supported = storage_feature.storagePushConstant16;
 				storage_buffer_capabilities.storage_input_output_16 = storage_feature.storageInputOutput16;
+			}
+
+			if (is_device_extension_enabled(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME)) {
+				pipeline_cache_control_support = pipeline_cache_control_features.pipelineCreationCacheControl;
 			}
 		}
 
@@ -1335,9 +1354,26 @@ Error VulkanContext::_create_physical_device(VkSurfaceKHR p_surface) {
 	//  features based on this query
 	vkGetPhysicalDeviceFeatures(gpu, &physical_device_features);
 
-	// Check required features
-	ERR_FAIL_COND_V_MSG(!physical_device_features.imageCubeArray, ERR_CANT_CREATE, "Your GPU doesn't support image cube arrays which are required to use the Vulkan-based renderers in Godot.");
-	ERR_FAIL_COND_V_MSG(!physical_device_features.independentBlend, ERR_CANT_CREATE, "Your GPU doesn't support independentBlend which is required to use the Vulkan-based renderers in Godot.");
+	// Check required features and abort if any of them is missing.
+	if (!physical_device_features.imageCubeArray || !physical_device_features.independentBlend) {
+		String error_string = vformat("Your GPU (%s) does not support the following features which are required to use Vulkan-based renderers in Godot:\n\n", device_name);
+		if (!physical_device_features.imageCubeArray) {
+			error_string += "- No support for image cube arrays.\n";
+		}
+		if (!physical_device_features.independentBlend) {
+			error_string += "- No support for independentBlend.\n";
+		}
+		error_string += "\nThis is usually a hardware limitation, so updating graphics drivers won't help in most cases.";
+
+#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
+		// Android/iOS platform ports currently don't exit themselves when this method returns `ERR_CANT_CREATE`.
+		OS::get_singleton()->alert(error_string + "\nClick OK to exit (black screen will be visible).");
+#else
+		OS::get_singleton()->alert(error_string + "\nClick OK to exit.");
+#endif
+
+		return ERR_CANT_CREATE;
+	}
 
 	physical_device_features.robustBufferAccess = false; // Turn off robust buffer access, which can hamper performance on some hardware.
 
@@ -1398,6 +1434,16 @@ Error VulkanContext::_create_device() {
 		vrs_features.attachmentFragmentShadingRate = vrs_capabilities.attachment_vrs_supported;
 
 		nextptr = &vrs_features;
+	}
+
+	VkPhysicalDevicePipelineCreationCacheControlFeatures pipeline_cache_control_features = {};
+	if (pipeline_cache_control_support) {
+		pipeline_cache_control_features.sType =
+				VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES;
+		pipeline_cache_control_features.pNext = nextptr;
+		pipeline_cache_control_features.pipelineCreationCacheControl = pipeline_cache_control_support;
+
+		nextptr = &pipeline_cache_control_features;
 	}
 
 	VkPhysicalDeviceVulkan11Features vulkan11features = {};
@@ -1700,17 +1746,6 @@ Error VulkanContext::_window_create(DisplayServer::WindowID p_window_id, Display
 	Error err = _update_swap_chain(&window);
 	ERR_FAIL_COND_V(err != OK, ERR_CANT_CREATE);
 
-	VkSemaphoreCreateInfo semaphoreCreateInfo = {
-		/*sType*/ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-		/*pNext*/ nullptr,
-		/*flags*/ 0,
-	};
-
-	for (uint32_t i = 0; i < FRAME_LAG; i++) {
-		VkResult vkerr = vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &window.image_acquired_semaphores[i]);
-		ERR_FAIL_COND_V(vkerr, ERR_CANT_CREATE);
-	}
-
 	windows[p_window_id] = window;
 	return OK;
 }
@@ -1760,9 +1795,6 @@ VkFramebuffer VulkanContext::window_get_framebuffer(DisplayServer::WindowID p_wi
 void VulkanContext::window_destroy(DisplayServer::WindowID p_window_id) {
 	ERR_FAIL_COND(!windows.has(p_window_id));
 	_clean_up_swap_chain(&windows[p_window_id]);
-	for (uint32_t i = 0; i < FRAME_LAG; i++) {
-		vkDestroySemaphore(device, windows[p_window_id].image_acquired_semaphores[i], nullptr);
-	}
 
 	vkDestroySurfaceKHR(inst, windows[p_window_id].surface, nullptr);
 	windows.erase(p_window_id);
@@ -1792,6 +1824,17 @@ Error VulkanContext::_clean_up_swap_chain(Window *window) {
 	if (separate_present_queue) {
 		vkDestroyCommandPool(device, window->present_cmd_pool, nullptr);
 	}
+
+	for (uint32_t i = 0; i < FRAME_LAG; i++) {
+		// Destroy the semaphores now (we'll re-create it later if we have to).
+		// We must do this because the semaphore cannot be reused if it's in a signaled state
+		// (which happens if vkAcquireNextImageKHR returned VK_ERROR_OUT_OF_DATE_KHR or VK_SUBOPTIMAL_KHR)
+		// The only way to reset it would be to present the swapchain... the one we just destroyed.
+		// And the API has no way to "unsignal" the semaphore.
+		vkDestroySemaphore(device, window->image_acquired_semaphores[i], nullptr);
+		window->image_acquired_semaphores[i] = 0;
+	}
+
 	return OK;
 }
 
@@ -2174,6 +2217,17 @@ Error VulkanContext::_update_swap_chain(Window *window) {
 
 	// Reset current buffer.
 	window->current_buffer = 0;
+
+	VkSemaphoreCreateInfo semaphoreCreateInfo = {
+		/*sType*/ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+		/*pNext*/ nullptr,
+		/*flags*/ 0,
+	};
+
+	for (uint32_t i = 0; i < FRAME_LAG; i++) {
+		VkResult vkerr = vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &window->image_acquired_semaphores[i]);
+		ERR_FAIL_COND_V(vkerr, ERR_CANT_CREATE);
+	}
 
 	return OK;
 }

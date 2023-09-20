@@ -485,7 +485,7 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 	if (_extension) {
 		const ObjectGDExtension *current_extension = _extension;
 		while (current_extension) {
-			p_list->push_back(PropertyInfo(Variant::NIL, current_extension->class_name, PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_CATEGORY));
+			p_list->push_back(PropertyInfo(Variant::NIL, current_extension->class_name, PROPERTY_HINT_NONE, current_extension->class_name, PROPERTY_USAGE_CATEGORY));
 
 			ClassDB::get_property_list(current_extension->class_name, p_list, true, this);
 
@@ -526,6 +526,31 @@ void Object::get_property_list(List<PropertyInfo> *p_list, bool p_reversed) cons
 
 void Object::validate_property(PropertyInfo &p_property) const {
 	_validate_propertyv(p_property);
+
+	if (_extension && _extension->validate_property) {
+		// GDExtension uses a StringName rather than a String for property name.
+		StringName prop_name = p_property.name;
+		GDExtensionPropertyInfo gdext_prop = {
+			(GDExtensionVariantType)p_property.type,
+			&prop_name,
+			&p_property.class_name,
+			(uint32_t)p_property.hint,
+			&p_property.hint_string,
+			p_property.usage,
+		};
+		if (_extension->validate_property(_extension_instance, &gdext_prop)) {
+			p_property.type = (Variant::Type)gdext_prop.type;
+			p_property.name = *reinterpret_cast<StringName *>(gdext_prop.name);
+			p_property.class_name = *reinterpret_cast<StringName *>(gdext_prop.class_name);
+			p_property.hint = (PropertyHint)gdext_prop.hint;
+			p_property.hint_string = *reinterpret_cast<String *>(gdext_prop.hint_string);
+			p_property.usage = gdext_prop.usage;
+		};
+	}
+
+	if (script_instance) { // Call it last to allow user altering already validated properties.
+		script_instance->validate_property(p_property);
+	}
 }
 
 bool Object::property_can_revert(const StringName &p_name) const {
@@ -795,14 +820,30 @@ Variant Object::call_const(const StringName &p_method, const Variant **p_args, i
 }
 
 void Object::notification(int p_notification, bool p_reversed) {
-	_notificationv(p_notification, p_reversed);
-
-	if (script_instance) {
-		script_instance->notification(p_notification);
+	if (p_reversed) {
+		if (script_instance) {
+			script_instance->notification(p_notification, p_reversed);
+		}
+	} else {
+		_notificationv(p_notification, p_reversed);
 	}
 
-	if (_extension && _extension->notification) {
-		_extension->notification(_extension_instance, p_notification);
+	if (_extension) {
+		if (_extension->notification2) {
+			_extension->notification2(_extension_instance, p_notification, static_cast<GDExtensionBool>(p_reversed));
+#ifndef DISABLE_DEPRECATED
+		} else if (_extension->notification) {
+			_extension->notification(_extension_instance, p_notification);
+#endif // DISABLE_DEPRECATED
+		}
+	}
+
+	if (p_reversed) {
+		_notificationv(p_notification, p_reversed);
+	} else {
+		if (script_instance) {
+			script_instance->notification(p_notification, p_reversed);
+		}
 	}
 }
 
@@ -826,7 +867,7 @@ String Object::to_string() {
 void Object::set_script_and_instance(const Variant &p_script, ScriptInstance *p_instance) {
 	//this function is not meant to be used in any of these ways
 	ERR_FAIL_COND(p_script.is_null());
-	ERR_FAIL_COND(!p_instance);
+	ERR_FAIL_NULL(p_instance);
 	ERR_FAIL_COND(script_instance != nullptr || !script.is_null());
 
 	script = p_script;
@@ -1259,7 +1300,7 @@ Error Object::connect(const StringName &p_signal, const Callable &p_callable, ui
 	ERR_FAIL_COND_V_MSG(p_callable.is_null(), ERR_INVALID_PARAMETER, "Cannot connect to '" + p_signal + "': the provided callable is null.");
 
 	Object *target_object = p_callable.get_object();
-	ERR_FAIL_COND_V_MSG(!target_object, ERR_INVALID_PARAMETER, "Cannot connect to '" + p_signal + "' to callable '" + p_callable + "': the callable object is null.");
+	ERR_FAIL_NULL_V_MSG(target_object, ERR_INVALID_PARAMETER, "Cannot connect to '" + p_signal + "' to callable '" + p_callable + "': the callable object is null.");
 
 	SignalData *s = signal_map.getptr(p_signal);
 	if (!s) {
@@ -1344,7 +1385,7 @@ bool Object::_disconnect(const StringName &p_signal, const Callable &p_callable,
 	ERR_FAIL_COND_V_MSG(p_callable.is_null(), false, "Cannot disconnect from '" + p_signal + "': the provided callable is null.");
 
 	Object *target_object = p_callable.get_object();
-	ERR_FAIL_COND_V_MSG(!target_object, false, "Cannot disconnect '" + p_signal + "' from callable '" + p_callable + "': the callable object is null.");
+	ERR_FAIL_NULL_V_MSG(target_object, false, "Cannot disconnect '" + p_signal + "' from callable '" + p_callable + "': the callable object is null.");
 
 	SignalData *s = signal_map.getptr(p_signal);
 	if (!s) {
@@ -1352,7 +1393,7 @@ bool Object::_disconnect(const StringName &p_signal, const Callable &p_callable,
 				(!script.is_null() && Ref<Script>(script)->has_script_signal(p_signal));
 		ERR_FAIL_COND_V_MSG(signal_is_valid, false, "Attempt to disconnect a nonexistent connection from '" + to_string() + "'. Signal: '" + p_signal + "', callable: '" + p_callable + "'.");
 	}
-	ERR_FAIL_COND_V_MSG(!s, false, vformat("Disconnecting nonexistent signal '%s' in %s.", p_signal, to_string()));
+	ERR_FAIL_NULL_V_MSG(s, false, vformat("Disconnecting nonexistent signal '%s' in %s.", p_signal, to_string()));
 
 	ERR_FAIL_COND_V_MSG(!s->slot_map.has(*p_callable.get_base_comparator()), false, "Attempt to disconnect a nonexistent connection from '" + to_string() + "'. Signal: '" + p_signal + "', callable: '" + p_callable + "'.");
 
@@ -1603,6 +1644,8 @@ void Object::_bind_methods() {
 	plget.return_val.hint = PROPERTY_HINT_ARRAY_TYPE;
 	plget.return_val.hint_string = "Dictionary";
 	BIND_OBJ_CORE_METHOD(plget);
+
+	BIND_OBJ_CORE_METHOD(MethodInfo(Variant::NIL, "_validate_property", PropertyInfo(Variant::DICTIONARY, "property")));
 
 	BIND_OBJ_CORE_METHOD(MethodInfo(Variant::BOOL, "_property_can_revert", PropertyInfo(Variant::STRING_NAME, "property")));
 	MethodInfo mipgr("_property_get_revert", PropertyInfo(Variant::STRING_NAME, "property"));

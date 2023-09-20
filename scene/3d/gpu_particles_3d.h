@@ -62,7 +62,7 @@ private:
 
 	bool emitting = false;
 	bool active = false;
-	bool signal_cancled = false;
+	bool signal_canceled = false;
 	bool one_shot = false;
 	int amount = 0;
 	double lifetime = 0.0;
@@ -178,6 +178,8 @@ public:
 	void emit_particle(const Transform3D &p_transform, const Vector3 &p_velocity, const Color &p_color, const Color &p_custom, uint32_t p_emit_flags);
 
 	AABB capture_aabb() const;
+	void convert_from_particles(Node *p_particles);
+
 	GPUParticles3D();
 	~GPUParticles3D();
 };

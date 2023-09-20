@@ -147,7 +147,9 @@ public:
 		_FORCE_INLINE_ bool has_no_type() const { return type_source == UNDETECTED; }
 		_FORCE_INLINE_ bool is_variant() const { return kind == VARIANT || kind == RESOLVING || kind == UNRESOLVED; }
 		_FORCE_INLINE_ bool is_hard_type() const { return type_source > INFERRED; }
+
 		String to_string() const;
+		PropertyInfo to_property_info(const String &p_name) const;
 
 		_FORCE_INLINE_ void set_container_element_type(const DataType &p_type) {
 			container_element_type = memnew(DataType(p_type));
@@ -724,6 +726,7 @@ public:
 
 		IdentifierNode *identifier = nullptr;
 		String icon_path;
+		String simplified_icon_path;
 		Vector<Member> members;
 		HashMap<StringName, int> members_indices;
 		ClassNode *outer = nullptr;
@@ -747,6 +750,10 @@ public:
 
 		bool resolved_interface = false;
 		bool resolved_body = false;
+
+		StringName get_global_name() const {
+			return (outer == nullptr && identifier != nullptr) ? identifier->name : StringName();
+		}
 
 		Member get_member(const StringName &p_name) const {
 			return members[members_indices[p_name]];
@@ -814,6 +821,8 @@ public:
 
 	struct ForNode : public Node {
 		IdentifierNode *variable = nullptr;
+		TypeNode *datatype_specifier = nullptr;
+		bool use_conversion_assign = false;
 		ExpressionNode *list = nullptr;
 		SuiteNode *loop = nullptr;
 
@@ -833,8 +842,8 @@ public:
 		Variant rpc_config;
 		MethodInfo info;
 		LambdaNode *source_lambda = nullptr;
-#ifdef TOOLS_ENABLED
 		Vector<Variant> default_arg_values;
+#ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
 #endif // TOOLS_ENABLED
 
@@ -848,9 +857,7 @@ public:
 
 	struct GetNodeNode : public ExpressionNode {
 		String full_path;
-#ifdef DEBUG_ENABLED
 		bool use_dollar = true;
-#endif
 
 		GetNodeNode() {
 			type = GET_NODE;
@@ -859,9 +866,7 @@ public:
 
 	struct IdentifierNode : public ExpressionNode {
 		StringName name;
-#ifdef DEBUG_ENABLED
 		SuiteNode *suite = nullptr; // The block in which the identifier is used.
-#endif
 
 		enum Source {
 			UNDEFINED_SOURCE,
@@ -908,6 +913,7 @@ public:
 	struct LambdaNode : public ExpressionNode {
 		FunctionNode *function = nullptr;
 		FunctionNode *parent_function = nullptr;
+		LambdaNode *parent_lambda = nullptr;
 		Vector<IdentifierNode *> captures;
 		HashMap<StringName, int> captures_indices;
 		bool use_self = false;
@@ -1026,6 +1032,7 @@ public:
 		IdentifierNode *identifier = nullptr;
 		Vector<ParameterNode *> parameters;
 		HashMap<StringName, int> parameters_indices;
+		MethodInfo method_info;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
 #endif // TOOLS_ENABLED
@@ -1321,6 +1328,7 @@ private:
 
 	ClassNode *current_class = nullptr;
 	FunctionNode *current_function = nullptr;
+	LambdaNode *current_lambda = nullptr;
 	SuiteNode *current_suite = nullptr;
 
 	CompletionContext completion_context;
@@ -1509,10 +1517,11 @@ private:
 	TypeNode *parse_type(bool p_allow_void = false);
 
 #ifdef TOOLS_ENABLED
-	int class_doc_line = 0x7FFFFFFF;
+	int max_script_doc_line = INT_MAX;
+	int min_member_doc_line = 1;
 	bool has_comment(int p_line, bool p_must_be_doc = false);
 	MemberDocData parse_doc_comment(int p_line, bool p_single_line = false);
-	ClassDocData parse_class_doc_comment(int p_line, bool p_inner_class, bool p_single_line = false);
+	ClassDocData parse_class_doc_comment(int p_line, bool p_single_line = false);
 #endif // TOOLS_ENABLED
 
 public:
@@ -1538,6 +1547,10 @@ public:
 	const HashSet<int> &get_unsafe_lines() const { return unsafe_lines; }
 	int get_last_line_number() const { return current.end_line; }
 #endif
+
+#ifdef TOOLS_ENABLED
+	static HashMap<String, String> theme_color_names;
+#endif // TOOLS_ENABLED
 
 	GDScriptParser();
 	~GDScriptParser();

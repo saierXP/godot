@@ -187,9 +187,10 @@ public:
 	template <class T>
 	static void register_class(bool p_virtual = false) {
 		GLOBAL_LOCK_FUNCTION;
+		static_assert(TypesAreSame<typename T::self_type, T>::value, "Class not declared properly, please use GDCLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
-		ERR_FAIL_COND(!t);
+		ERR_FAIL_NULL(t);
 		t->creation_func = &creator<T>;
 		t->exposed = true;
 		t->is_virtual = p_virtual;
@@ -201,13 +202,29 @@ public:
 	template <class T>
 	static void register_abstract_class() {
 		GLOBAL_LOCK_FUNCTION;
+		static_assert(TypesAreSame<typename T::self_type, T>::value, "Class not declared properly, please use GDCLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
-		ERR_FAIL_COND(!t);
+		ERR_FAIL_NULL(t);
 		t->exposed = true;
 		t->class_ptr = T::get_class_ptr_static();
 		t->api = current_api;
 		//nothing
+	}
+
+	template <class T>
+	static void register_internal_class() {
+		GLOBAL_LOCK_FUNCTION;
+		static_assert(TypesAreSame<typename T::self_type, T>::value, "Class not declared properly, please use GDCLASS.");
+		T::initialize_class();
+		ClassInfo *t = classes.getptr(T::get_class_static());
+		ERR_FAIL_NULL(t);
+		t->creation_func = &creator<T>;
+		t->exposed = false;
+		t->is_virtual = false;
+		t->class_ptr = T::get_class_ptr_static();
+		t->api = current_api;
+		T::register_custom_data_to_otdb();
 	}
 
 	static void register_extension_class(ObjectGDExtension *p_extension);
@@ -221,9 +238,10 @@ public:
 	template <class T>
 	static void register_custom_instance_class() {
 		GLOBAL_LOCK_FUNCTION;
+		static_assert(TypesAreSame<typename T::self_type, T>::value, "Class not declared properly, please use GDCLASS.");
 		T::initialize_class();
 		ClassInfo *t = classes.getptr(T::get_class_static());
-		ERR_FAIL_COND(!t);
+		ERR_FAIL_NULL(t);
 		t->creation_func = &_create_ptr_func<T>;
 		t->exposed = true;
 		t->class_ptr = T::get_class_ptr_static();
@@ -329,7 +347,7 @@ public:
 		GLOBAL_LOCK_FUNCTION;
 
 		MethodBind *bind = create_vararg_method_bind(p_method, p_info, p_return_nil_is_variant);
-		ERR_FAIL_COND_V(!bind, nullptr);
+		ERR_FAIL_NULL_V(bind, nullptr);
 
 		if constexpr (std::is_same<typename member_function_traits<M>::return_type, Object *>::value) {
 			bind->set_return_type_is_raw_object_ptr(true);
@@ -342,7 +360,7 @@ public:
 		GLOBAL_LOCK_FUNCTION;
 
 		MethodBind *bind = create_vararg_method_bind(p_method, p_info, p_return_nil_is_variant);
-		ERR_FAIL_COND_V(!bind, nullptr);
+		ERR_FAIL_NULL_V(bind, nullptr);
 
 		if constexpr (std::is_same<typename member_function_traits<M>::return_type, Object *>::value) {
 			bind->set_return_type_is_raw_object_ptr(true);
@@ -479,6 +497,10 @@ _FORCE_INLINE_ Vector<Error> errarray(P... p_args) {
 #define GDREGISTER_ABSTRACT_CLASS(m_class)             \
 	if (m_class::_class_is_enabled) {                  \
 		::ClassDB::register_abstract_class<m_class>(); \
+	}
+#define GDREGISTER_INTERNAL_CLASS(m_class)             \
+	if (m_class::_class_is_enabled) {                  \
+		::ClassDB::register_internal_class<m_class>(); \
 	}
 
 #define GDREGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))
