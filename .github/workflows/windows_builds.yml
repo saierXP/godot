@@ -36,7 +36,7 @@ jobs:
             cache-name: windows-editor-symbols
             target: editor
             tests: false
-            sconsflags: debug_symbols=yes progress=no optimize=speed_trace target=editor
+            sconsflags: debug_symbols=yes optimize=debug verbose=yes target=editor
             bin: "./bin/godot.windows.editor.x86_64.symbols.exe"
             
           # - name: Template (target=template_release)
