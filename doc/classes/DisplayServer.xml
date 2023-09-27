@@ -776,14 +776,14 @@
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if OS is using dark mode.
-				[b]Note:[/b] This method is implemented on macOS, Windows and Linux (X11).
+				[b]Note:[/b] This method is implemented on Android, iOS, macOS, Windows, and Linux (X11).
 			</description>
 		</method>
 		<method name="is_dark_mode_supported" qualifiers="const">
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] if OS supports dark mode.
-				[b]Note:[/b] This method is implemented on macOS, Windows and Linux (X11).
+				[b]Note:[/b] This method is implemented on Android, iOS, macOS, Windows, and Linux (X11).
 			</description>
 		</method>
 		<method name="is_touchscreen_available" qualifiers="const">
@@ -1891,9 +1891,9 @@
 		</constant>
 		<constant name="OPENGL_CONTEXT" value="3" enum="HandleType">
 			OpenGL context (only with the GL Compatibility renderer):
-			- Windows: [code]HGLRC[/code] for the window.
+			- Windows: [code]HGLRC[/code] for the window (native GL), or [code]EGLContext[/code] for the window (ANGLE).
 			- Linux: [code]GLXContext*[/code] for the window.
-			- macOS: [code]NSOpenGLContext*[/code] for the window.
+			- macOS: [code]NSOpenGLContext*[/code] for the window (native GL), or [code]EGLContext[/code] for the window (ANGLE).
 			- Android: [code]EGLContext[/code] for the window.
 		</constant>
 		<constant name="TTS_UTTERANCE_STARTED" value="0" enum="TTSUtteranceEvent">

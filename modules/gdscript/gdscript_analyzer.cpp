@@ -459,6 +459,10 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 				}
 				base = info_parser->get_parser()->head->get_datatype();
 			} else if (class_exists(name)) {
+				if (Engine::get_singleton()->has_singleton(name)) {
+					push_error(vformat(R"(Cannot inherit native class "%s" because it is an engine singleton.)", name), id);
+					return ERR_PARSE_ERROR;
+				}
 				base.kind = GDScriptParser::DataType::NATIVE;
 				base.native_type = name;
 			} else {
@@ -1415,7 +1419,7 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, bo
 }
 
 void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root) {
-	ERR_FAIL_COND_MSG(p_node == nullptr, "Trying to resolve type of a null node.");
+	ERR_FAIL_NULL_MSG(p_node, "Trying to resolve type of a null node.");
 
 	switch (p_node->type) {
 		case GDScriptParser::Node::NONE:
@@ -1932,9 +1936,14 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 	}
 
 #ifdef DEBUG_ENABLED
-	if (!has_specified_type && !p_assignable->infer_datatype && !is_constant) {
+	if (!has_specified_type) {
 		const bool is_parameter = p_assignable->type == GDScriptParser::Node::PARAMETER;
-		parser->push_warning(p_assignable, GDScriptWarning::UNTYPED_DECLARATION, is_parameter ? "Parameter" : "Variable", p_assignable->identifier->name);
+		const String declaration_type = is_constant ? "Constant" : (is_parameter ? "Parameter" : "Variable");
+		if (p_assignable->infer_datatype || is_constant) {
+			parser->push_warning(p_assignable, GDScriptWarning::INFERRED_DECLARATION, declaration_type, p_assignable->identifier->name);
+		} else {
+			parser->push_warning(p_assignable, GDScriptWarning::UNTYPED_DECLARATION, declaration_type, p_assignable->identifier->name);
+		}
 	}
 #endif
 
@@ -2148,7 +2157,9 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 		} else {
 			p_for->variable->set_datatype(variable_type);
 #ifdef DEBUG_ENABLED
-			if (!variable_type.is_hard_type()) {
+			if (variable_type.is_hard_type()) {
+				parser->push_warning(p_for->variable, GDScriptWarning::INFERRED_DECLARATION, R"("for" iterator variable)", p_for->variable->name);
+			} else {
 				parser->push_warning(p_for->variable, GDScriptWarning::UNTYPED_DECLARATION, R"("for" iterator variable)", p_for->variable->name);
 			}
 #endif
@@ -3202,6 +3213,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	List<GDScriptParser::DataType> par_types;
 
 	bool is_constructor = (base_type.is_meta_type || (p_call->callee && p_call->callee->type == GDScriptParser::Node::IDENTIFIER)) && p_call->function_name == SNAME("new");
+
+	if (is_constructor && Engine::get_singleton()->has_singleton(base_type.native_type)) {
+		push_error(vformat(R"(Cannot construct native class "%s" because it is an engine singleton.)", base_type.native_type), p_call);
+		p_call->set_datatype(call_type);
+		return;
+	}
 
 	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags)) {
 		// If the method is implemented in the class hierarchy, the virtual flag will not be set for that MethodInfo and the search stops there.
@@ -5026,7 +5043,11 @@ void GDScriptAnalyzer::is_shadowing(GDScriptParser::IdentifierNode *p_identifier
 			parser->push_warning(p_identifier, GDScriptWarning::SHADOWED_GLOBAL_IDENTIFIER, p_context, name, "built-in function");
 			return;
 		} else if (ClassDB::class_exists(name)) {
-			parser->push_warning(p_identifier, GDScriptWarning::SHADOWED_GLOBAL_IDENTIFIER, p_context, name, "global class");
+			parser->push_warning(p_identifier, GDScriptWarning::SHADOWED_GLOBAL_IDENTIFIER, p_context, name, "native class");
+			return;
+		} else if (ScriptServer::is_global_class(name)) {
+			String class_path = ScriptServer::get_global_class_path(name).get_file();
+			parser->push_warning(p_identifier, GDScriptWarning::SHADOWED_GLOBAL_IDENTIFIER, p_context, name, vformat(R"(global class defined in "%s")", class_path));
 			return;
 		} else if (GDScriptParser::get_builtin_type(name) != Variant::VARIANT_MAX) {
 			parser->push_warning(p_identifier, GDScriptWarning::SHADOWED_GLOBAL_IDENTIFIER, p_context, name, "built-in type");
